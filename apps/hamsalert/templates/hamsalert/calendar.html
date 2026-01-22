@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Calendar - HamsAlert{% endblock %}
+
+{% block content %}
+<div class="flex flex-col lg:flex-row gap-6">
+    <!-- Calendar -->
+    <div class="card bg-base-100 shadow-xl flex-1">
+        <div class="card-body">
+            <!-- Month Navigation -->
+            <div class="flex items-center justify-between mb-4">
+                <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-ghost btn-sm">&lt; Prev</a>
+                <h2 class="card-title text-2xl">{{ month_name }} {{ year }}</h2>
+                <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-ghost btn-sm">Next &gt;</a>
+            </div>
+
+            <!-- Calendar Grid -->
+            <div class="grid grid-cols-7 gap-1">
+                <!-- Day Headers -->
+                {% for day_name in "Sun,Mon,Tue,Wed,Thu,Fri,Sat"|make_list %}
+                {% endfor %}
+                <div class="text-center font-bold p-2 text-sm">Sun</div>
+                <div class="text-center font-bold p-2 text-sm">Mon</div>
+                <div class="text-center font-bold p-2 text-sm">Tue</div>
+                <div class="text-center font-bold p-2 text-sm">Wed</div>
+                <div class="text-center font-bold p-2 text-sm">Thu</div>
+                <div class="text-center font-bold p-2 text-sm">Fri</div>
+                <div class="text-center font-bold p-2 text-sm">Sat</div>
+
+                <!-- Calendar Days -->
+                {% for week in month_days %}
+                    {% for day in week %}
+                        {% if day == 0 %}
+                            <div class="p-2"></div>
+                        {% else %}
+                            <div
+                                class="p-2 text-center cursor-pointer rounded-lg hover:bg-base-200 relative
+                                    {% if day == today.day and month == today.month and year == today.year %}bg-primary text-primary-content{% endif %}"
+                                hx-get="{% url 'day_events' year month day %}"
+                                hx-target="#event-list"
+                                hx-swap="innerHTML"
+                            >
+                                {{ day }}
+                                {% if day in days_with_events %}
+                                    <span class="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-1.5 h-1.5 bg-accent rounded-full"></span>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Event List Panel -->
+    <div class="card bg-base-100 shadow-xl w-full lg:w-96">
+        <div class="card-body">
+            <h2 class="card-title">Events</h2>
+            <div id="event-list">
+                <p class="text-base-content/60">Click a day to view events</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

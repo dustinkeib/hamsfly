@@ -1,0 +1,18 @@
+<h3 class="font-semibold mb-3">{{ date|date:"F j, Y" }}</h3>
+
+{% if events %}
+    <div class="space-y-3">
+        {% for event in events %}
+            <div class="card bg-base-200 shadow-sm">
+                <div class="card-body p-4">
+                    <h4 class="card-title text-base">{{ event.club }}</h4>
+                    {% if event.description %}
+                        <p class="text-sm text-base-content/70">{{ event.description }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <p class="text-base-content/60">No events on this day</p>
+{% endif %}
