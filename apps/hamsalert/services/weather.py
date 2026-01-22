@@ -82,6 +82,13 @@ class WeatherData:
         return None
 
     @property
+    def temperature_f(self) -> Optional[int]:
+        """Return temperature in Fahrenheit."""
+        if self.temperature is None:
+            return None
+        return round(self.temperature * 9 / 5 + 32)
+
+    @property
     def flight_rules_color(self) -> str:
         """Return DaisyUI color class for flight rules."""
         colors = {
