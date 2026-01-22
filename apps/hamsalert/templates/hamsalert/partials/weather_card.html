@@ -1,0 +1,114 @@
+{% if weather_configured %}
+    {% if weather %}
+        <div class="card bg-base-100 shadow-sm mb-4 border border-base-300">
+            <div class="card-body p-4">
+                <!-- Header with station and flight rules -->
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <h4 class="font-semibold text-sm">Weather: {{ weather.station }}</h4>
+                        <span class="badge badge-{{ weather.flight_rules_color }} badge-sm">{{ weather.flight_rules }}</span>
+                    </div>
+                    <button
+                        class="btn btn-ghost btn-xs"
+                        hx-get="{% url 'weather_refresh' %}"
+                        hx-target="#weather-container"
+                        hx-swap="innerHTML"
+                        title="Refresh weather"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- R/C Flying Assessment -->
+                <div class="mb-3">
+                    <span class="badge badge-{{ weather.rc_rating_color }} badge-md">
+                        {% with assessment=weather.rc_flying_assessment %}
+                            {% if assessment.rating == 'good' %}Good for R/C
+                            {% elif assessment.rating == 'marginal' %}Marginal
+                            {% elif assessment.rating == 'poor' %}Poor Conditions
+                            {% else %}No Fly
+                            {% endif %}
+                        {% endwith %}
+                    </span>
+                    <span class="text-xs text-base-content/70 ml-2">
+                        {% for reason in weather.rc_flying_assessment.reasons %}
+                            {{ reason }}{% if not forloop.last %} · {% endif %}
+                        {% endfor %}
+                    </span>
+                </div>
+
+                <!-- Key Metrics Grid -->
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                    <!-- Wind -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
+                        <div>
+                            <div class="font-medium">
+                                {% if weather.wind.direction is not None %}{{ weather.wind.direction }}°{% else %}VRB{% endif %}
+                                @ {{ weather.wind.speed }} kt
+                                {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
+                            </div>
+                            <div class="text-xs text-base-content/60">Wind</div>
+                        </div>
+                    </div>
+
+                    <!-- Visibility -->
+                    <div>
+                        <div class="font-medium">{{ weather.visibility_repr }} SM</div>
+                        <div class="text-xs text-base-content/60">Visibility</div>
+                    </div>
+
+                    <!-- Clouds/Ceiling -->
+                    <div>
+                        <div class="font-medium">
+                            {% if weather.ceiling %}
+                                {{ weather.ceiling }} ft
+                            {% else %}
+                                Clear
+                            {% endif %}
+                        </div>
+                        <div class="text-xs text-base-content/60">Ceiling</div>
+                    </div>
+
+                    <!-- Temperature -->
+                    <div>
+                        <div class="font-medium">
+                            {% if weather.temperature is not None %}
+                                {{ weather.temperature }}°C
+                            {% else %}
+                                --
+                            {% endif %}
+                        </div>
+                        <div class="text-xs text-base-content/60">Temperature</div>
+                    </div>
+                </div>
+
+                <!-- Collapsible Raw METAR -->
+                <div class="collapse collapse-arrow bg-base-200 mt-3">
+                    <input type="checkbox" class="peer" />
+                    <div class="collapse-title text-xs font-medium py-2 min-h-0">
+                        Raw METAR
+                    </div>
+                    <div class="collapse-content">
+                        <code class="text-xs break-all">{{ weather.raw_metar }}</code>
+                    </div>
+                </div>
+
+                <!-- Cache/Time Info -->
+                <div class="text-xs text-base-content/50 mt-2">
+                    Observed: {{ weather.observation_time|date:"H:i" }}Z
+                    {% if weather.from_cache %} · Cached{% endif %}
+                </div>
+            </div>
+        </div>
+    {% elif weather_error %}
+        <div class="alert alert-warning mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span class="text-sm">Weather unavailable: {{ weather_error }}</span>
+        </div>
+    {% endif %}
+{% endif %}

@@ -1,5 +1,10 @@
 <h3 class="font-semibold mb-3">{{ date|date:"F j, Y" }}</h3>
 
+<!-- Weather Card -->
+<div id="weather-container">
+    {% include "hamsalert/partials/weather_card.html" %}
+</div>
+
 {% if events %}
     <div class="space-y-3">
         {% for event in events %}

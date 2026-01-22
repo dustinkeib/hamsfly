@@ -2,7 +2,10 @@ import calendar
 from datetime import date
 
 from django.shortcuts import render
+from django.views.decorators.http import require_GET
+
 from .models import Event
+from .services import WeatherService, WeatherServiceError
 
 
 def calendar_view(request):
@@ -52,8 +55,47 @@ def day_events(request, year, month, day):
     """Return events for a specific day (HTMX partial)."""
     event_date = date(year, month, day)
     events = Event.objects.filter(date=event_date)
+
+    # Fetch weather data
+    weather = None
+    weather_error = None
+    weather_service = WeatherService()
+
+    if weather_service.is_configured():
+        station = request.GET.get('station')
+        try:
+            weather = weather_service.get_weather(station)
+        except WeatherServiceError as e:
+            weather_error = str(e)
+
     context = {
         'events': events,
         'date': event_date,
+        'weather': weather,
+        'weather_error': weather_error,
+        'weather_configured': weather_service.is_configured(),
     }
     return render(request, 'hamsalert/partials/day_events.html', context)
+
+
+@require_GET
+def weather_refresh(request):
+    """HTMX endpoint to refresh weather data (bypasses cache)."""
+    weather = None
+    weather_error = None
+    weather_service = WeatherService()
+
+    if weather_service.is_configured():
+        station = request.GET.get('station')
+        weather_service.clear_cache(station)
+        try:
+            weather = weather_service.get_weather(station)
+        except WeatherServiceError as e:
+            weather_error = str(e)
+
+    context = {
+        'weather': weather,
+        'weather_error': weather_error,
+        'weather_configured': weather_service.is_configured(),
+    }
+    return render(request, 'hamsalert/partials/weather_card.html', context)
