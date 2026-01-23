@@ -140,6 +140,9 @@ AVWX_DEFAULT_STATION = 'KACV'  # Arcata-Eureka Airport (near Samoa)
 NWS_DEFAULT_LOCATION = (40.9781, -124.1086)  # Lat/lon near KACV
 NWS_USER_AGENT = 'HamsAlert/1.0'
 
+# Local timezone for weather date comparisons
+WEATHER_LOCAL_TIMEZONE = 'America/Los_Angeles'
+
 # Weather Cache TTLs
 WEATHER_METAR_CACHE_TTL = 1800   # 30 min
 WEATHER_TAF_CACHE_TTL = 3600    # 1 hour

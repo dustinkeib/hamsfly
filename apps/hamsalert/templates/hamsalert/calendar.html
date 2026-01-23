@@ -68,11 +68,10 @@
 
 {% block scripts %}
 <script>
-    // Highlight today based on client's local timezone
-    (function() {
+    document.addEventListener('DOMContentLoaded', function() {
         const now = new Date();
         const todayYear = now.getFullYear();
-        const todayMonth = now.getMonth() + 1; // JavaScript months are 0-indexed
+        const todayMonth = now.getMonth() + 1;
         const todayDay = now.getDate();
 
         document.querySelectorAll('[data-day]').forEach(function(el) {
@@ -82,8 +81,13 @@
 
             if (year === todayYear && month === todayMonth && day === todayDay) {
                 el.classList.add('bg-primary', 'text-primary-content');
+                // Auto-load today's events
+                const url = el.getAttribute('hx-get');
+                if (url) {
+                    htmx.ajax('GET', url, '#event-list');
+                }
             }
         });
-    })();
+    });
 </script>
 {% endblock %}

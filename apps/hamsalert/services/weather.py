@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 from django.conf import settings
@@ -450,6 +451,7 @@ class WeatherService:
         self.default_station = getattr(settings, 'AVWX_DEFAULT_STATION', 'KJFK')
         self.nws_location = getattr(settings, 'NWS_DEFAULT_LOCATION', (40.9781, -124.1086))
         self.nws_user_agent = getattr(settings, 'NWS_USER_AGENT', 'HamsAlert/1.0')
+        self.local_timezone = ZoneInfo(getattr(settings, 'WEATHER_LOCAL_TIMEZONE', 'America/Los_Angeles'))
 
         # Cache TTLs
         self.metar_cache_ttl = getattr(settings, 'WEATHER_METAR_CACHE_TTL', 1800)
@@ -474,7 +476,8 @@ class WeatherService:
         - 8-16 days: Open-Meteo
         - >16 days: Unavailable
         """
-        days_out = (target_date - date.today()).days
+        local_today = datetime.now(self.local_timezone).date()
+        days_out = (target_date - local_today).days
 
         if days_out < 0:
             return UnavailableWeatherData("Historical weather not available")
@@ -1068,11 +1071,12 @@ class WeatherService:
         """Clear cached weather data."""
         station = (station or self.default_station).upper()
         lat, lon = self.nws_location
+        local_today = datetime.now(self.local_timezone).date()
 
         if target_date is None:
-            target_date = date.today()
+            target_date = local_today
 
-        days_out = (target_date - date.today()).days
+        days_out = (target_date - local_today).days
 
         # Clear appropriate cache based on date
         if days_out == 0:
