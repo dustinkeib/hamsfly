@@ -74,18 +74,14 @@
                     <!-- Wind Arrow - always available -->
                     <div class="text-4xl font-bold" title="Wind direction">{{ weather.wind_arrow }}</div>
 
-                    <!-- Wind - always available -->
+                    <!-- Rain Chance - always available (NWS/OpenMeteo) -->
                     <div>
-                        {% if weather.wind %}
-                        <div class="font-medium whitespace-nowrap">
-                            {{ weather.wind.direction_compass }}
-                            @ {{ weather.wind.speed }} kt
-                            {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
-                        </div>
+                        {% if weather.precipitation_probability is not None %}
+                        <div class="font-medium">{{ weather.precipitation_probability }}%</div>
                         {% else %}
                         <div class="font-medium">--</div>
                         {% endif %}
-                        <div class="text-xs text-base-content/60">Wind</div>
+                        <div class="text-xs text-base-content/60">Rain</div>
                     </div>
 
                     <!-- Temperature - always available (METAR/NWS/OpenMeteo) -->
@@ -104,14 +100,18 @@
                         {% endif %}
                     </div>
 
-                    <!-- Rain Chance - always available (NWS/OpenMeteo) -->
+                    <!-- Wind - always available -->
                     <div>
-                        {% if weather.precipitation_probability is not None %}
-                        <div class="font-medium">{{ weather.precipitation_probability }}%</div>
+                        {% if weather.wind %}
+                        <div class="font-medium whitespace-nowrap">
+                            {{ weather.wind.direction_compass }}
+                            @ {{ weather.wind.speed }} kt
+                            {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
+                        </div>
                         {% else %}
                         <div class="font-medium">--</div>
                         {% endif %}
-                        <div class="text-xs text-base-content/60">Rain</div>
+                        <div class="text-xs text-base-content/60">Wind</div>
                     </div>
 
                     <!-- Ceiling - aviation only (METAR/TAF, days 0-1) -->
