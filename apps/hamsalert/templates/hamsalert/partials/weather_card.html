@@ -69,12 +69,12 @@
                 <div class="text-sm font-medium mb-3">{{ weather.short_forecast }}</div>
                 {% endif %}
 
-                <!-- Key Metrics Grid with source badges -->
-                <div class="grid grid-cols-4 gap-2 text-sm justify-items-center text-center items-center">
-                    <!-- Wind Arrow -->
+                <!-- Key Metrics Grid - ordered by data availability (always available first) -->
+                <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 text-sm justify-items-center text-center items-center">
+                    <!-- Wind Arrow - always available -->
                     <div class="text-4xl font-bold" title="Wind direction">{{ weather.wind_arrow }}</div>
 
-                    <!-- Wind -->
+                    <!-- Wind - always available -->
                     <div>
                         {% if weather.wind %}
                         <div class="font-medium whitespace-nowrap">
@@ -82,90 +82,56 @@
                             @ {{ weather.wind.speed }} kt
                             {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
                         </div>
-                        <div class="text-xs text-base-content/60">
-                            Wind
-                            {% if weather.wind_source %}
-                            <span class="badge badge-ghost badge-xs">{{ weather.wind_source.value|upper }}</span>
-                            {% endif %}
-                        </div>
                         {% else %}
                         <div class="font-medium">--</div>
+                        {% endif %}
                         <div class="text-xs text-base-content/60">Wind</div>
+                    </div>
+
+                    <!-- Temperature - always available (METAR/NWS/OpenMeteo) -->
+                    <div>
+                        {% if weather.metar and weather.metar.temperature_f is not None %}
+                        <div class="font-medium">{{ weather.metar.temperature_f }}°F</div>
+                        <div class="text-xs text-base-content/60">Temp</div>
+                        {% elif weather.temperature_high_f is not None %}
+                        <div class="font-medium whitespace-nowrap">
+                            {{ weather.temperature_high_f }}°{% if weather.temperature_low_f is not None %}/{{ weather.temperature_low_f }}°{% endif %}
+                        </div>
+                        <div class="text-xs text-base-content/60">Hi{% if weather.temperature_low_f is not None %}/Lo{% endif %}</div>
+                        {% else %}
+                        <div class="font-medium">--</div>
+                        <div class="text-xs text-base-content/60">Temp</div>
                         {% endif %}
                     </div>
 
-                    <!-- Ceiling/Visibility OR Temperature -->
+                    <!-- Rain Chance - always available (NWS/OpenMeteo) -->
                     <div>
-                        {% if weather.ceiling is not None or weather.visibility is not None %}
-                            {# Show ceiling for aviation sources #}
-                            {% if weather.ceiling is not None %}
-                            <div class="font-medium">{{ weather.ceiling }} ft</div>
-                            <div class="text-xs text-base-content/60">
-                                Ceiling
-                                {% if weather.ceiling_source %}
-                                <span class="badge badge-ghost badge-xs">{{ weather.ceiling_source.value|upper }}</span>
-                                {% endif %}
-                            </div>
-                            {% elif weather.visibility is not None %}
-                            <div class="font-medium">{{ weather.visibility }} mi</div>
-                            <div class="text-xs text-base-content/60">
-                                Visibility
-                                {% if weather.visibility_source %}
-                                <span class="badge badge-ghost badge-xs">{{ weather.visibility_source.value|upper }}</span>
-                                {% endif %}
-                            </div>
-                            {% endif %}
-                        {% elif weather.temperature_high_f is not None or weather.temperature_f is not None %}
-                            {# Show temperature for forecast sources #}
-                            <div class="font-medium">
-                                {% if weather.metar and weather.metar.temperature_f is not None %}
-                                    {{ weather.metar.temperature_f }}°F
-                                {% elif weather.temperature_high_f is not None %}
-                                    {{ weather.temperature_high_f }}°F
-                                    {% if weather.temperature_low_f is not None %}/ {{ weather.temperature_low_f }}°F{% endif %}
-                                {% else %}
-                                    --
-                                {% endif %}
-                            </div>
-                            <div class="text-xs text-base-content/60">
-                                {% if weather.metar and weather.metar.temperature_f is not None %}Temp{% else %}High{% if weather.temperature_low_f is not None %}/Low{% endif %}{% endif %}
-                                {% if weather.temperature_source %}
-                                <span class="badge badge-ghost badge-xs">{{ weather.temperature_source.value|upper }}</span>
-                                {% endif %}
-                            </div>
+                        {% if weather.precipitation_probability is not None %}
+                        <div class="font-medium">{{ weather.precipitation_probability }}%</div>
                         {% else %}
-                            <div class="font-medium">Clear</div>
-                            <div class="text-xs text-base-content/60">Ceiling</div>
+                        <div class="font-medium">--</div>
                         {% endif %}
+                        <div class="text-xs text-base-content/60">Rain</div>
                     </div>
 
-                    <!-- Visibility OR Precipitation -->
+                    <!-- Ceiling - aviation only (METAR/TAF, days 0-1) -->
                     <div>
-                        {% if weather.visibility is not None and weather.ceiling is not None %}
-                            {# If we showed ceiling, show visibility here #}
-                            <div class="font-medium">{{ weather.visibility }} mi</div>
-                            <div class="text-xs text-base-content/60">
-                                Visibility
-                                {% if weather.visibility_source %}
-                                <span class="badge badge-ghost badge-xs">{{ weather.visibility_source.value|upper }}</span>
-                                {% endif %}
-                            </div>
-                        {% elif weather.precipitation_probability is not None %}
-                            {# Show precipitation for forecasts #}
-                            <div class="font-medium">{{ weather.precipitation_probability }}%</div>
-                            <div class="text-xs text-base-content/60">
-                                Rain Chance
-                                {% if weather.precip_source %}
-                                <span class="badge badge-ghost badge-xs">{{ weather.precip_source.value|upper }}</span>
-                                {% endif %}
-                            </div>
-                        {% elif weather.metar and weather.visibility is not None %}
-                            <div class="font-medium">{{ weather.visibility }} mi</div>
-                            <div class="text-xs text-base-content/60">Visibility</div>
+                        {% if weather.ceiling is not None %}
+                        <div class="font-medium">{{ weather.ceiling }} ft</div>
                         {% else %}
-                            <div class="font-medium">--</div>
-                            <div class="text-xs text-base-content/60">Rain Chance</div>
+                        <div class="font-medium">{% if weather.metar or weather.taf %}Clear{% else %}--{% endif %}</div>
                         {% endif %}
+                        <div class="text-xs text-base-content/60">Ceiling</div>
+                    </div>
+
+                    <!-- Visibility - aviation only (METAR/TAF, days 0-1) -->
+                    <div>
+                        {% if weather.visibility is not None %}
+                        <div class="font-medium">{{ weather.visibility }} mi</div>
+                        {% else %}
+                        <div class="font-medium">--</div>
+                        {% endif %}
+                        <div class="text-xs text-base-content/60">Visibility</div>
                     </div>
                 </div>
 
