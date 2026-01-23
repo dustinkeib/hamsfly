@@ -64,7 +64,7 @@
                     </div>
 
                     <!-- Key Metrics Grid -->
-                    <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div class="grid grid-cols-2 gap-2 text-sm justify-items-center text-center">
                         <!-- Wind -->
                         <div class="flex items-center gap-2">
                             <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
@@ -116,7 +116,7 @@
                     </div>
 
                     <!-- Cache/Time Info -->
-                    <div class="text-xs text-base-content/50 mt-2">
+                    <div class="text-xs text-base-content/50 mt-2 text-center">
                         Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}
                         {% if refresh_seconds %} · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span>{% endif %}
                     </div>
@@ -172,7 +172,7 @@
                     </div>
 
                     <!-- Key Metrics Grid -->
-                    <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div class="grid grid-cols-2 gap-2 text-sm justify-items-center text-center">
                         <!-- Wind -->
                         <div class="flex items-center gap-2">
                             <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
@@ -220,7 +220,7 @@
                     </div>
 
                     <!-- Cache/Time Info -->
-                    <div class="text-xs text-base-content/50 mt-2">
+                    <div class="text-xs text-base-content/50 mt-2 text-center">
                         Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}
                         {% if refresh_seconds %} · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span>{% endif %}
                     </div>
@@ -280,7 +280,7 @@
                     {% endif %}
 
                     <!-- Key Metrics Grid -->
-                    <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div class="grid grid-cols-2 gap-2 text-sm justify-items-center text-center">
                         <!-- Wind -->
                         <div class="flex items-center gap-2">
                             <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
@@ -317,7 +317,7 @@
                     </div>
 
                     <!-- Cache/Time Info -->
-                    <div class="text-xs text-base-content/50 mt-2">
+                    <div class="text-xs text-base-content/50 mt-2 text-center">
                         Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}
                         {% if refresh_seconds %} · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span>{% endif %}
                     </div>
@@ -372,7 +372,7 @@
                     </div>
 
                     <!-- Key Metrics Grid -->
-                    <div class="grid grid-cols-2 gap-2 text-sm">
+                    <div class="grid grid-cols-2 gap-2 text-sm justify-items-center text-center">
                         <!-- Wind -->
                         <div class="flex items-center gap-2">
                             <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
@@ -409,7 +409,7 @@
                     </div>
 
                     <!-- Extended forecast notice -->
-                    <div class="text-xs text-base-content/50 mt-2">
+                    <div class="text-xs text-base-content/50 mt-2 text-center">
                         Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}
                         {% if refresh_seconds %} · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span>{% endif %}
                     </div>
@@ -435,7 +435,8 @@
         function formatTime(d) {
             var h = d.getHours().toString().padStart(2, '0');
             var m = d.getMinutes().toString().padStart(2, '0');
-            return 'Refresh: ' + h + ':' + m;
+            var s = d.getSeconds().toString().padStart(2, '0');
+            return 'Refresh: ' + h + ':' + m + ':' + s;
         }
         el.textContent = formatTime(refreshTime);
     });

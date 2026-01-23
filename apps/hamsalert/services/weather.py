@@ -680,8 +680,8 @@ class WeatherService:
 
                     # Make target_datetime timezone-aware for comparison
                     if start_time.tzinfo is not None:
-                        from datetime import timezone
-                        target_datetime = target_datetime.replace(tzinfo=timezone.utc)
+                        from datetime import timezone as dt_timezone
+                        target_datetime = target_datetime.replace(tzinfo=dt_timezone.utc)
 
                     if start_time <= target_datetime <= end_time:
                         applicable_period = fc
