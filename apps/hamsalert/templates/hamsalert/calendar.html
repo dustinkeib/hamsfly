@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Calendar - HAMSalert{% endblock %}
+{% block title %}Calendar - HAMSfly{% endblock %}
 
 {% block content %}
 <div class="flex flex-col lg:flex-row gap-6">
@@ -122,21 +122,30 @@
             });
         });
 
-        // Fall back to today if no saved date or saved date not on current view
+        // Fall back to today (if current month) or first day (if different month)
         if (!loadedSaved) {
-            document.querySelectorAll('[data-day]').forEach(function(el) {
-                const year = parseInt(el.dataset.year, 10);
-                const month = parseInt(el.dataset.month, 10);
-                const day = parseInt(el.dataset.day, 10);
+            const firstDayEl = document.querySelector('[data-day]');
+            const viewYear = parseInt(firstDayEl.dataset.year, 10);
+            const viewMonth = parseInt(firstDayEl.dataset.month, 10);
+            const isCurrentMonth = viewYear === todayYear && viewMonth === todayMonth;
 
-                if (year === todayYear && month === todayMonth && day === todayDay) {
-                    const url = el.getAttribute('hx-get');
-                    if (url) {
-                        htmx.ajax('GET', url, '#event-list');
-                        selectDay(el);
-                    }
+            let targetEl = null;
+            document.querySelectorAll('[data-day]').forEach(function(el) {
+                const day = parseInt(el.dataset.day, 10);
+                if (isCurrentMonth && day === todayDay) {
+                    targetEl = el;
+                } else if (!isCurrentMonth && day === 1 && !targetEl) {
+                    targetEl = el;
                 }
             });
+
+            if (targetEl) {
+                const url = targetEl.getAttribute('hx-get');
+                if (url) {
+                    htmx.ajax('GET', url, '#event-list');
+                    selectDay(targetEl);
+                }
+            }
         }
     });
 </script>
