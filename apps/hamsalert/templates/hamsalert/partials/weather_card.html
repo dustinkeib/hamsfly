@@ -132,30 +132,6 @@
                     </div>
                 </div>
 
-                <!-- Raw METAR/TAF collapsible section -->
-                {% if weather.raw_metar or weather.raw_taf %}
-                <div class="collapse collapse-arrow bg-base-200 mt-3">
-                    <input type="checkbox" />
-                    <div class="collapse-title text-xs font-medium py-2 min-h-0">
-                        Show raw data
-                    </div>
-                    <div class="collapse-content">
-                        {% if weather.raw_metar %}
-                        <div class="mb-2">
-                            <span class="text-xs font-bold text-base-content">METAR</span>
-                            <code class="text-xs break-all ml-2 block mt-1">{{ weather.raw_metar }}</code>
-                        </div>
-                        {% endif %}
-                        {% if weather.raw_taf %}
-                        <div>
-                            <span class="text-xs font-bold text-base-content">TAF</span>
-                            <code class="text-xs break-all ml-2 block mt-1">{{ weather.raw_taf }}</code>
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-                {% endif %}
-
                 <!-- Cache/Time Info -->
                 <div class="text-xs text-base-content/50 mt-2 text-center">
                     Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}
