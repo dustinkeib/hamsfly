@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 
 from .models import Event
-from .services import WeatherService, WeatherServiceError, WeatherSource
+from .services import CompositeWeatherData, WeatherService, WeatherServiceError, WeatherSource
 
 
 # Cache TTLs by source (must match settings)
@@ -20,11 +20,20 @@ WEATHER_CACHE_TTLS = {
 
 def get_refresh_info(weather) -> dict:
     """Calculate seconds/minutes until weather cache expires."""
-    if not weather or not hasattr(weather, 'cached_at') or not hasattr(weather, 'source'):
+    if not weather or not hasattr(weather, 'cached_at'):
         return {'seconds': 0, 'minutes': 0}
-    ttl = WEATHER_CACHE_TTLS.get(weather.source, 0)
+
+    # For CompositeWeatherData, use the shortest TTL from available sources
+    if isinstance(weather, CompositeWeatherData):
+        ttl = weather.get_shortest_ttl(WEATHER_CACHE_TTLS)
+    elif hasattr(weather, 'source'):
+        ttl = WEATHER_CACHE_TTLS.get(weather.source, 0)
+    else:
+        ttl = 0
+
     if not ttl:
         return {'seconds': 0, 'minutes': 0}
+
     # Handle both naive and aware datetimes (for cached data)
     now = timezone.now()
     cached_at = weather.cached_at
@@ -83,7 +92,7 @@ def day_events(request, year, month, day):
     event_date = date(year, month, day)
     events = Event.objects.filter(date=event_date)
 
-    # Fetch weather data for the selected date
+    # Fetch weather data from all applicable sources
     weather = None
     weather_error = None
     weather_service = WeatherService()
@@ -91,7 +100,11 @@ def day_events(request, year, month, day):
     if weather_service.is_configured():
         station = request.GET.get('station')
         try:
-            weather = weather_service.get_weather_for_date(event_date, station)
+            weather = weather_service.get_all_weather_for_date(event_date, station)
+            # If no sources returned data, treat as unavailable
+            if not weather.sources:
+                weather_error = "No weather data available for this date"
+                weather = None
         except WeatherServiceError as e:
             weather_error = str(e)
 
@@ -130,9 +143,14 @@ def weather_refresh(request):
 
     if weather_service.is_configured():
         station = request.GET.get('station')
-        weather_service.clear_cache(station, target_date)
+        # Clear all applicable caches for this date
+        weather_service.clear_all_cache_for_date(target_date, station)
         try:
-            weather = weather_service.get_weather_for_date(target_date, station)
+            weather = weather_service.get_all_weather_for_date(target_date, station)
+            # If no sources returned data, treat as unavailable
+            if not weather.sources:
+                weather_error = "No weather data available for this date"
+                weather = None
         except WeatherServiceError as e:
             weather_error = str(e)
 

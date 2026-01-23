@@ -1,4 +1,5 @@
 from .weather import (
+    CompositeWeatherData,
     WeatherService,
     WeatherData,
     WeatherServiceError,
@@ -10,6 +11,7 @@ from .weather import (
 )
 
 __all__ = [
+    'CompositeWeatherData',
     'WeatherService',
     'WeatherData',
     'WeatherServiceError',

@@ -12,6 +12,7 @@ Implements caching to stay within API rate limits.
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
@@ -447,6 +448,263 @@ class UnavailableWeatherData:
 AnyWeatherData = WeatherData | TafForecastData | NwsForecastData | OpenMeteoForecastData | UnavailableWeatherData
 
 
+@dataclass
+class CompositeWeatherData:
+    """Combined weather data from all applicable sources for a date."""
+    target_date: date
+    metar: Optional[WeatherData] = None
+    taf: Optional[TafForecastData] = None
+    nws: Optional[NwsForecastData] = None
+    openmeteo: Optional[OpenMeteoForecastData] = None
+    cached_at: datetime = field(default_factory=timezone.now)
+    source: WeatherSource = WeatherSource.METAR  # Primary source for compatibility
+
+    @property
+    def sources(self) -> list[WeatherSource]:
+        """List of available sources."""
+        result = []
+        if self.metar:
+            result.append(WeatherSource.METAR)
+        if self.taf:
+            result.append(WeatherSource.TAF)
+        if self.nws:
+            result.append(WeatherSource.NWS)
+        if self.openmeteo:
+            result.append(WeatherSource.OPENMETEO)
+        return result
+
+    @property
+    def wind(self) -> Optional[WindData]:
+        """Best available wind data (METAR > TAF > NWS > OpenMeteo)."""
+        if self.metar:
+            return self.metar.wind
+        if self.taf:
+            return self.taf.wind
+        if self.nws:
+            return self.nws.wind
+        if self.openmeteo:
+            return self.openmeteo.wind
+        return None
+
+    @property
+    def wind_source(self) -> Optional[WeatherSource]:
+        """Source of wind data."""
+        if self.metar:
+            return WeatherSource.METAR
+        if self.taf:
+            return WeatherSource.TAF
+        if self.nws:
+            return WeatherSource.NWS
+        if self.openmeteo:
+            return WeatherSource.OPENMETEO
+        return None
+
+    @property
+    def temperature_f(self) -> Optional[int]:
+        """Best available temperature in Fahrenheit (METAR > NWS > OpenMeteo)."""
+        if self.metar and self.metar.temperature_f is not None:
+            return self.metar.temperature_f
+        if self.nws and self.nws.temperature_high is not None:
+            return self.nws.temperature_high
+        if self.openmeteo and self.openmeteo.temperature_high_f is not None:
+            return self.openmeteo.temperature_high_f
+        return None
+
+    @property
+    def temperature_source(self) -> Optional[WeatherSource]:
+        """Source of temperature data."""
+        if self.metar and self.metar.temperature_f is not None:
+            return WeatherSource.METAR
+        if self.nws and self.nws.temperature_high is not None:
+            return WeatherSource.NWS
+        if self.openmeteo and self.openmeteo.temperature_high_f is not None:
+            return WeatherSource.OPENMETEO
+        return None
+
+    @property
+    def temperature_high_f(self) -> Optional[int]:
+        """High temperature for forecast days."""
+        if self.nws and self.nws.temperature_high is not None:
+            return self.nws.temperature_high
+        if self.openmeteo and self.openmeteo.temperature_high_f is not None:
+            return self.openmeteo.temperature_high_f
+        return None
+
+    @property
+    def temperature_low_f(self) -> Optional[int]:
+        """Low temperature for forecast days."""
+        if self.nws and self.nws.temperature_low is not None:
+            return self.nws.temperature_low
+        if self.openmeteo and self.openmeteo.temperature_low_f is not None:
+            return self.openmeteo.temperature_low_f
+        return None
+
+    @property
+    def ceiling(self) -> Optional[int]:
+        """Best available ceiling (METAR > TAF)."""
+        if self.metar:
+            return self.metar.ceiling
+        if self.taf:
+            return self.taf.ceiling
+        return None
+
+    @property
+    def ceiling_source(self) -> Optional[WeatherSource]:
+        """Source of ceiling data."""
+        if self.metar and self.metar.ceiling is not None:
+            return WeatherSource.METAR
+        if self.taf and self.taf.ceiling is not None:
+            return WeatherSource.TAF
+        return None
+
+    @property
+    def visibility(self) -> Optional[float]:
+        """Best available visibility (METAR > TAF)."""
+        if self.metar:
+            return self.metar.visibility
+        if self.taf:
+            return self.taf.visibility
+        return None
+
+    @property
+    def visibility_source(self) -> Optional[WeatherSource]:
+        """Source of visibility data."""
+        if self.metar:
+            return WeatherSource.METAR
+        if self.taf:
+            return WeatherSource.TAF
+        return None
+
+    @property
+    def precipitation_probability(self) -> Optional[int]:
+        """Best available precipitation probability (NWS > OpenMeteo)."""
+        if self.nws and self.nws.precipitation_probability is not None:
+            return self.nws.precipitation_probability
+        if self.openmeteo and self.openmeteo.precipitation_probability is not None:
+            return self.openmeteo.precipitation_probability
+        return None
+
+    @property
+    def precip_source(self) -> Optional[WeatherSource]:
+        """Source of precipitation probability."""
+        if self.nws and self.nws.precipitation_probability is not None:
+            return WeatherSource.NWS
+        if self.openmeteo and self.openmeteo.precipitation_probability is not None:
+            return WeatherSource.OPENMETEO
+        return None
+
+    @property
+    def flight_rules(self) -> Optional[str]:
+        """Flight rules from METAR or TAF."""
+        if self.metar:
+            return self.metar.flight_rules
+        if self.taf:
+            return self.taf.flight_rules
+        return None
+
+    @property
+    def flight_rules_color(self) -> str:
+        """DaisyUI color for flight rules."""
+        colors = {
+            'VFR': 'success',
+            'MVFR': 'info',
+            'IFR': 'warning',
+            'LIFR': 'error',
+        }
+        return colors.get(self.flight_rules or '', 'neutral')
+
+    @property
+    def short_forecast(self) -> Optional[str]:
+        """Short forecast text from NWS."""
+        if self.nws:
+            return self.nws.short_forecast
+        return None
+
+    @property
+    def rc_flying_assessment(self) -> dict:
+        """Calculate R/C flying assessment from best available data."""
+        wind = self.wind
+        if not wind:
+            return {'rating': 'good', 'reasons': ['No wind data available']}
+
+        return calculate_rc_assessment(
+            wind_speed=wind.speed,
+            wind_gust=wind.gust,
+            visibility=self.visibility,
+            ceiling=self.ceiling,
+            precipitation_probability=self.precipitation_probability,
+        )
+
+    @property
+    def rc_rating_color(self) -> str:
+        return rc_rating_color(self.rc_flying_assessment['rating'])
+
+    @property
+    def wind_arrow(self) -> str:
+        wind = self.wind
+        if wind:
+            return wind_arrow(wind.direction)
+        return '◉'
+
+    @property
+    def station(self) -> Optional[str]:
+        """Station identifier from METAR or TAF."""
+        if self.metar:
+            return self.metar.station
+        if self.taf:
+            return self.taf.station
+        return None
+
+    @property
+    def raw_metar(self) -> Optional[str]:
+        """Raw METAR string if available."""
+        if self.metar:
+            return self.metar.raw_metar
+        return None
+
+    @property
+    def raw_taf(self) -> Optional[str]:
+        """Raw TAF string if available."""
+        if self.taf:
+            return self.taf.raw_taf
+        return None
+
+    @property
+    def from_cache(self) -> bool:
+        """True if any source was from cache."""
+        if self.metar and self.metar.from_cache:
+            return True
+        if self.taf and self.taf.from_cache:
+            return True
+        if self.nws and self.nws.from_cache:
+            return True
+        if self.openmeteo and self.openmeteo.from_cache:
+            return True
+        return False
+
+    @property
+    def source_label(self) -> str:
+        """Label showing all sources."""
+        labels = []
+        if self.metar:
+            labels.append('METAR')
+        if self.taf:
+            labels.append('TAF')
+        if self.nws:
+            labels.append('NWS')
+        if self.openmeteo:
+            labels.append('Extended')
+        return ' + '.join(labels) if labels else 'Unavailable'
+
+    def get_shortest_ttl(self, ttls: dict[WeatherSource, int]) -> int:
+        """Get the shortest TTL from available sources."""
+        min_ttl = float('inf')
+        for source in self.sources:
+            if source in ttls:
+                min_ttl = min(min_ttl, ttls[source])
+        return int(min_ttl) if min_ttl != float('inf') else 0
+
+
 class WeatherServiceError(Exception):
     """Base exception for weather service errors."""
     pass
@@ -502,6 +760,137 @@ class WeatherService:
         if days_out <= 16:
             return self._get_openmeteo_forecast(target_date)
         return UnavailableWeatherData("Forecast not available beyond 16 days")
+
+    def get_all_weather_for_date(
+        self,
+        target_date: date,
+        station: Optional[str] = None
+    ) -> CompositeWeatherData:
+        """
+        Fetch weather data from ALL applicable sources for a date.
+
+        Data availability by day:
+        - Day 0 (today): METAR + TAF + NWS + OpenMeteo
+        - Day 1 (tomorrow): TAF + NWS + OpenMeteo
+        - Days 2-7: NWS + OpenMeteo
+        - Days 8-16: OpenMeteo only
+        - >16 days: None
+
+        Uses ThreadPoolExecutor for parallel fetches on cache miss.
+        """
+        local_today = datetime.now(self.local_timezone).date()
+        days_out = (target_date - local_today).days
+
+        if days_out < 0:
+            return CompositeWeatherData(target_date=target_date)
+
+        if days_out > 16:
+            return CompositeWeatherData(target_date=target_date)
+
+        # Determine which sources to fetch
+        fetch_metar = days_out == 0
+        fetch_taf = days_out <= 1
+        fetch_nws = days_out <= 7
+        fetch_openmeteo = days_out <= 16
+
+        # Prepare fetch tasks
+        results = {
+            'metar': None,
+            'taf': None,
+            'nws': None,
+            'openmeteo': None,
+        }
+
+        def fetch_metar_safe():
+            try:
+                return self._get_metar(station)
+            except WeatherServiceError as e:
+                logger.warning(f"METAR fetch failed: {e}")
+                return None
+
+        def fetch_taf_safe():
+            try:
+                return self._get_taf(station, target_date)
+            except WeatherServiceError as e:
+                logger.warning(f"TAF fetch failed: {e}")
+                return None
+
+        def fetch_nws_safe():
+            try:
+                return self._get_nws_forecast(target_date)
+            except WeatherServiceError as e:
+                logger.warning(f"NWS fetch failed: {e}")
+                return None
+
+        def fetch_openmeteo_safe():
+            try:
+                return self._get_openmeteo_forecast(target_date)
+            except WeatherServiceError as e:
+                logger.warning(f"OpenMeteo fetch failed: {e}")
+                return None
+
+        # Use ThreadPoolExecutor for parallel fetches
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {}
+            if fetch_metar:
+                futures[executor.submit(fetch_metar_safe)] = 'metar'
+            if fetch_taf:
+                futures[executor.submit(fetch_taf_safe)] = 'taf'
+            if fetch_nws:
+                futures[executor.submit(fetch_nws_safe)] = 'nws'
+            if fetch_openmeteo:
+                futures[executor.submit(fetch_openmeteo_safe)] = 'openmeteo'
+
+            for future in as_completed(futures):
+                source_name = futures[future]
+                try:
+                    results[source_name] = future.result()
+                except Exception as e:
+                    logger.error(f"Error fetching {source_name}: {e}")
+                    results[source_name] = None
+
+        # Determine primary source for TTL calculation
+        if results['metar']:
+            primary_source = WeatherSource.METAR
+        elif results['taf']:
+            primary_source = WeatherSource.TAF
+        elif results['nws']:
+            primary_source = WeatherSource.NWS
+        elif results['openmeteo']:
+            primary_source = WeatherSource.OPENMETEO
+        else:
+            primary_source = WeatherSource.UNAVAILABLE
+
+        return CompositeWeatherData(
+            target_date=target_date,
+            metar=results['metar'],
+            taf=results['taf'],
+            nws=results['nws'],
+            openmeteo=results['openmeteo'],
+            cached_at=timezone.now(),
+            source=primary_source,
+        )
+
+    def clear_all_cache_for_date(
+        self,
+        target_date: date,
+        station: Optional[str] = None
+    ) -> None:
+        """Clear all weather caches for a specific date."""
+        station = (station or self.default_station).upper()
+        lat, lon = self.nws_location
+        local_today = datetime.now(self.local_timezone).date()
+        days_out = (target_date - local_today).days
+
+        # Clear all applicable caches
+        if days_out == 0:
+            cache.delete(self._cache_key('metar', station))
+        if days_out <= 1:
+            cache.delete(self._cache_key('taf', f"{station}_{target_date.isoformat()}"))
+        if days_out <= 7:
+            cache.delete(self._cache_key('nws', f"{lat}_{lon}_{target_date.isoformat()}"))
+        if days_out <= 16:
+            cache.delete(self._cache_key('openmeteo', f"{lat}_{lon}_{target_date.isoformat()}"))
 
     def get_weather(self, station: Optional[str] = None) -> Optional[WeatherData]:
         """Get METAR weather data for a station (legacy method for today)."""
