@@ -34,8 +34,10 @@
                             <div class="p-2"></div>
                         {% else %}
                             <div
-                                class="p-2 text-center cursor-pointer rounded-lg hover:bg-base-200 relative
-                                    {% if day == today.day and month == today.month and year == today.year %}bg-primary text-primary-content{% endif %}"
+                                class="p-2 text-center cursor-pointer rounded-lg hover:bg-base-200 relative"
+                                data-year="{{ year }}"
+                                data-month="{{ month }}"
+                                data-day="{{ day }}"
                                 hx-get="{% url 'day_events' year month day %}"
                                 hx-target="#event-list"
                                 hx-swap="innerHTML"
@@ -62,4 +64,26 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Highlight today based on client's local timezone
+    (function() {
+        const now = new Date();
+        const todayYear = now.getFullYear();
+        const todayMonth = now.getMonth() + 1; // JavaScript months are 0-indexed
+        const todayDay = now.getDate();
+
+        document.querySelectorAll('[data-day]').forEach(function(el) {
+            const year = parseInt(el.dataset.year, 10);
+            const month = parseInt(el.dataset.month, 10);
+            const day = parseInt(el.dataset.day, 10);
+
+            if (year === todayYear && month === todayMonth && day === todayDay) {
+                el.classList.add('bg-primary', 'text-primary-content');
+            }
+        });
+    })();
+</script>
 {% endblock %}
