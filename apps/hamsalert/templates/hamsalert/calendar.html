@@ -74,20 +74,70 @@
         const todayMonth = now.getMonth() + 1;
         const todayDay = now.getDate();
 
+        // Check for saved date in localStorage
+        const saved = localStorage.getItem('selectedDate');
+        let savedYear, savedMonth, savedDay;
+        if (saved) {
+            const parts = saved.split('-');
+            savedYear = parseInt(parts[0], 10);
+            savedMonth = parseInt(parts[1], 10);
+            savedDay = parseInt(parts[2], 10);
+        }
+
+        function selectDay(el) {
+            // Remove selection from all days
+            document.querySelectorAll('[data-day]').forEach(function(d) {
+                d.classList.remove('ring-2', 'ring-accent', 'ring-offset-2');
+            });
+            // Add selection to this day
+            el.classList.add('ring-2', 'ring-accent', 'ring-offset-2');
+        }
+
+        let loadedSaved = false;
+
         document.querySelectorAll('[data-day]').forEach(function(el) {
             const year = parseInt(el.dataset.year, 10);
             const month = parseInt(el.dataset.month, 10);
             const day = parseInt(el.dataset.day, 10);
 
+            // Highlight today
             if (year === todayYear && month === todayMonth && day === todayDay) {
                 el.classList.add('bg-primary', 'text-primary-content');
-                // Auto-load today's events
+            }
+
+            // Load saved date if found on this calendar view
+            if (saved && year === savedYear && month === savedMonth && day === savedDay) {
                 const url = el.getAttribute('hx-get');
                 if (url) {
                     htmx.ajax('GET', url, '#event-list');
+                    selectDay(el);
+                    loadedSaved = true;
                 }
             }
+
+            // Save date and highlight on click
+            el.addEventListener('click', function() {
+                localStorage.setItem('selectedDate', `${year}-${month}-${day}`);
+                selectDay(el);
+            });
         });
+
+        // Fall back to today if no saved date or saved date not on current view
+        if (!loadedSaved) {
+            document.querySelectorAll('[data-day]').forEach(function(el) {
+                const year = parseInt(el.dataset.year, 10);
+                const month = parseInt(el.dataset.month, 10);
+                const day = parseInt(el.dataset.day, 10);
+
+                if (year === todayYear && month === todayMonth && day === todayDay) {
+                    const url = el.getAttribute('hx-get');
+                    if (url) {
+                        htmx.ajax('GET', url, '#event-list');
+                        selectDay(el);
+                    }
+                }
+            });
+        }
     });
 </script>
 {% endblock %}
