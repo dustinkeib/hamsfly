@@ -2,10 +2,37 @@ import calendar
 from datetime import date
 
 from django.shortcuts import render
+from django.utils import timezone
 from django.views.decorators.http import require_GET
 
 from .models import Event
-from .services import WeatherService, WeatherServiceError
+from .services import WeatherService, WeatherServiceError, WeatherSource
+
+
+# Cache TTLs by source (must match settings)
+WEATHER_CACHE_TTLS = {
+    WeatherSource.METAR: 1800,      # 30 min
+    WeatherSource.TAF: 3600,        # 1 hour
+    WeatherSource.NWS: 7200,        # 2 hours
+    WeatherSource.OPENMETEO: 14400, # 4 hours
+}
+
+
+def get_refresh_info(weather) -> dict:
+    """Calculate seconds/minutes until weather cache expires."""
+    if not weather or not hasattr(weather, 'cached_at') or not hasattr(weather, 'source'):
+        return {'seconds': 0, 'minutes': 0}
+    ttl = WEATHER_CACHE_TTLS.get(weather.source, 0)
+    if not ttl:
+        return {'seconds': 0, 'minutes': 0}
+    # Handle both naive and aware datetimes (for cached data)
+    now = timezone.now()
+    cached_at = weather.cached_at
+    if timezone.is_naive(cached_at):
+        cached_at = timezone.make_aware(cached_at)
+    elapsed = (now - cached_at).total_seconds()
+    remaining = max(int(ttl - elapsed), 60)  # minimum 60s
+    return {'seconds': remaining, 'minutes': (remaining + 59) // 60}
 
 
 def calendar_view(request):
@@ -68,12 +95,15 @@ def day_events(request, year, month, day):
         except WeatherServiceError as e:
             weather_error = str(e)
 
+    refresh = get_refresh_info(weather)
     context = {
         'events': events,
         'date': event_date,
         'weather': weather,
         'weather_error': weather_error,
         'weather_configured': weather_service.is_configured(),
+        'refresh_seconds': refresh['seconds'],
+        'refresh_minutes': refresh['minutes'],
     }
     return render(request, 'hamsalert/partials/day_events.html', context)
 
@@ -106,10 +136,13 @@ def weather_refresh(request):
         except WeatherServiceError as e:
             weather_error = str(e)
 
+    refresh = get_refresh_info(weather)
     context = {
         'weather': weather,
         'weather_error': weather_error,
         'weather_configured': weather_service.is_configured(),
         'date': target_date,
+        'refresh_seconds': refresh['seconds'],
+        'refresh_minutes': refresh['minutes'],
     }
     return render(request, 'hamsalert/partials/weather_card.html', context)

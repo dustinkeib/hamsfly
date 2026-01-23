@@ -1,3 +1,4 @@
+{% load tz %}
 {% if weather_configured %}
     {% if weather %}
         {% if weather.source.value == 'unavailable' %}
@@ -16,7 +17,13 @@
 
         {% elif weather.source.value == 'metar' %}
             {# METAR - Current conditions #}
-            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300">
+            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300"
+                 {% if refresh_seconds %}
+                 hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
+                 hx-trigger="load delay:{{ refresh_seconds }}s"
+                 hx-target="#weather-container"
+                 hx-swap="innerHTML"
+                 {% endif %}
                 <div class="card-body p-4">
                     <!-- Header with station and flight rules -->
                     <div class="flex items-center justify-between mb-2">
@@ -110,15 +117,21 @@
 
                     <!-- Cache/Time Info -->
                     <div class="text-xs text-base-content/50 mt-2">
-                        Observed: {{ weather.observation_time|date:"H:i" }}Z
-                        {% if weather.from_cache %} · Cached{% endif %}
+                        Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}
+                        {% if refresh_seconds %} · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span>{% endif %}
                     </div>
                 </div>
             </div>
 
         {% elif weather.source.value == 'taf' %}
             {# TAF - Tomorrow's forecast #}
-            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300">
+            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300"
+                 {% if refresh_seconds %}
+                 hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
+                 hx-trigger="load delay:{{ refresh_seconds }}s"
+                 hx-target="#weather-container"
+                 hx-swap="innerHTML"
+                 {% endif %}
                 <div class="card-body p-4">
                     <!-- Header with station and flight rules -->
                     <div class="flex items-center justify-between mb-2">
@@ -208,15 +221,21 @@
 
                     <!-- Cache/Time Info -->
                     <div class="text-xs text-base-content/50 mt-2">
-                        Issued: {{ weather.issue_time|date:"H:i" }}Z
-                        {% if weather.from_cache %} · Cached{% endif %}
+                        Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}
+                        {% if refresh_seconds %} · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span>{% endif %}
                     </div>
                 </div>
             </div>
 
         {% elif weather.source.value == 'nws' %}
             {# NWS - 2-7 day forecast #}
-            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300">
+            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300"
+                 {% if refresh_seconds %}
+                 hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
+                 hx-trigger="load delay:{{ refresh_seconds }}s"
+                 hx-target="#weather-container"
+                 hx-swap="innerHTML"
+                 {% endif %}
                 <div class="card-body p-4">
                     <!-- Header -->
                     <div class="flex items-center justify-between mb-2">
@@ -299,15 +318,21 @@
 
                     <!-- Cache/Time Info -->
                     <div class="text-xs text-base-content/50 mt-2">
-                        National Weather Service forecast
-                        {% if weather.from_cache %} · Cached{% endif %}
+                        Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}
+                        {% if refresh_seconds %} · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span>{% endif %}
                     </div>
                 </div>
             </div>
 
         {% elif weather.source.value == 'openmeteo' %}
             {# Open-Meteo - 8-16 day extended forecast #}
-            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300">
+            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300"
+                 {% if refresh_seconds %}
+                 hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
+                 hx-trigger="load delay:{{ refresh_seconds }}s"
+                 hx-target="#weather-container"
+                 hx-swap="innerHTML"
+                 {% endif %}
                 <div class="card-body p-4">
                     <!-- Header -->
                     <div class="flex items-center justify-between mb-2">
@@ -385,8 +410,8 @@
 
                     <!-- Extended forecast notice -->
                     <div class="text-xs text-base-content/50 mt-2">
-                        Extended forecast (accuracy decreases beyond 7 days)
-                        {% if weather.from_cache %} · Cached{% endif %}
+                        Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}
+                        {% if refresh_seconds %} · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span>{% endif %}
                     </div>
                 </div>
             </div>
@@ -401,3 +426,18 @@
         </div>
     {% endif %}
 {% endif %}
+
+<script>
+(function() {
+    document.querySelectorAll('.countdown-timer').forEach(function(el) {
+        var seconds = parseInt(el.dataset.seconds, 10);
+        var refreshTime = new Date(Date.now() + seconds * 1000);
+        function formatTime(d) {
+            var h = d.getHours().toString().padStart(2, '0');
+            var m = d.getMinutes().toString().padStart(2, '0');
+            return 'Refresh: ' + h + ':' + m;
+        }
+        el.textContent = formatTime(refreshTime);
+    });
+})();
+</script>

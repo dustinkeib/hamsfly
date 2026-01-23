@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from django.conf import settings
 from django.core.cache import cache
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +190,7 @@ class WeatherData:
     temperature: Optional[int] = None  # Celsius
     dewpoint: Optional[int] = None
     flight_rules: str = 'VFR'
-    cached_at: datetime = field(default_factory=datetime.now)
+    cached_at: datetime = field(default_factory=timezone.now)
     from_cache: bool = False
     source: WeatherSource = WeatherSource.METAR
 
@@ -273,7 +274,7 @@ class TafForecastData:
     visibility: float
     clouds: list[CloudLayer] = field(default_factory=list)
     flight_rules: str = 'VFR'
-    cached_at: datetime = field(default_factory=datetime.now)
+    cached_at: datetime = field(default_factory=timezone.now)
     from_cache: bool = False
     source: WeatherSource = WeatherSource.TAF
 
@@ -340,7 +341,7 @@ class NwsForecastData:
     temperature_low: Optional[int] = None
     short_forecast: str = ''
     precipitation_probability: Optional[int] = None
-    cached_at: datetime = field(default_factory=datetime.now)
+    cached_at: datetime = field(default_factory=timezone.now)
     from_cache: bool = False
     source: WeatherSource = WeatherSource.NWS
 
@@ -378,7 +379,7 @@ class OpenMeteoForecastData:
     temperature_high: Optional[int] = None  # Celsius
     temperature_low: Optional[int] = None
     precipitation_probability: Optional[int] = None
-    cached_at: datetime = field(default_factory=datetime.now)
+    cached_at: datetime = field(default_factory=timezone.now)
     from_cache: bool = False
     source: WeatherSource = WeatherSource.OPENMETEO
 
@@ -598,7 +599,7 @@ class WeatherService:
                 temperature=temp.get('value'),
                 dewpoint=dewpoint.get('value'),
                 flight_rules=data.get('flight_rules', 'VFR'),
-                cached_at=datetime.now(),
+                cached_at=timezone.now(),
                 source=WeatherSource.METAR,
             )
 
@@ -764,7 +765,7 @@ class WeatherService:
                 visibility=visibility,
                 clouds=clouds,
                 flight_rules=applicable_period.get('flight_rules', 'VFR'),
-                cached_at=datetime.now(),
+                cached_at=timezone.now(),
                 source=WeatherSource.TAF,
             )
 
@@ -953,7 +954,7 @@ class WeatherService:
                 temperature_low=temp_low,
                 short_forecast=daytime_period.short_forecast,
                 precipitation_probability=precip_prob,
-                cached_at=datetime.now(),
+                cached_at=timezone.now(),
                 source=WeatherSource.NWS,
             )
 
@@ -1059,7 +1060,7 @@ class WeatherService:
                 temperature_high=round(temp_max) if temp_max is not None else None,
                 temperature_low=round(temp_min) if temp_min is not None else None,
                 precipitation_probability=precip_prob,
-                cached_at=datetime.now(),
+                cached_at=timezone.now(),
                 source=WeatherSource.OPENMETEO,
             )
 
