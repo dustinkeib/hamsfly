@@ -54,6 +54,16 @@ class WindData:
             return self.gust - self.speed
         return None
 
+    @property
+    def direction_compass(self) -> str:
+        """Return 16-point compass direction (N, NNE, NE, etc.)."""
+        if self.direction is None:
+            return 'VRB'
+        directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+                      'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+        index = round(self.direction / 22.5) % 16
+        return directions[index]
+
 
 @dataclass
 class CloudLayer:
@@ -169,10 +179,11 @@ def rc_rating_color(rating: str) -> str:
 def wind_arrow(direction: Optional[int]) -> str:
     """Return arrow character indicating wind direction."""
     if direction is None:
-        return '○'  # Variable/calm
+        return '◉'  # Variable/calm
     # Wind FROM direction, arrow shows where it's going TO
     arrow_direction = (direction + 180) % 360
-    arrows = ['↓', '↙', '←', '↖', '↑', '↗', '→', '↘']
+    # Heavy filled arrows for visibility
+    arrows = ['⬇️', '↙️', '⬅️', '↖️', '⬆️', '↗️', '➡️', '↘️']
     index = round(arrow_direction / 45) % 8
     return arrows[index]
 

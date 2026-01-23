@@ -64,24 +64,18 @@
                     </div>
 
                     <!-- Key Metrics Grid -->
-                    <div class="grid grid-cols-2 gap-2 text-sm justify-items-center text-center">
-                        <!-- Wind -->
-                        <div class="flex items-center gap-2">
-                            <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
-                            <div>
-                                <div class="font-medium">
-                                    {% if weather.wind.direction is not None %}{{ weather.wind.direction }}°{% else %}VRB{% endif %}
-                                    @ {{ weather.wind.speed }} kt
-                                    {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
-                                </div>
-                                <div class="text-xs text-base-content/60">Wind</div>
-                            </div>
-                        </div>
+                    <div class="grid grid-cols-4 gap-2 text-sm justify-items-center text-center items-center">
+                        <!-- Wind Arrow -->
+                        <div class="text-4xl font-bold" title="Wind direction">{{ weather.wind_arrow }}</div>
 
-                        <!-- Visibility -->
+                        <!-- Wind -->
                         <div>
-                            <div class="font-medium">{{ weather.visibility }} mi</div>
-                            <div class="text-xs text-base-content/60">Visibility</div>
+                            <div class="font-medium whitespace-nowrap">
+                                {{ weather.wind.direction_compass }}
+                                @ {{ weather.wind.speed }} kt
+                                {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
+                            </div>
+                            <div class="text-xs text-base-content/60">Wind</div>
                         </div>
 
                         <!-- Clouds/Ceiling -->
@@ -96,16 +90,10 @@
                             <div class="text-xs text-base-content/60">Ceiling</div>
                         </div>
 
-                        <!-- Temperature -->
+                        <!-- Visibility -->
                         <div>
-                            <div class="font-medium">
-                                {% if weather.temperature is not None %}
-                                    {{ weather.temperature_f }}°F
-                                {% else %}
-                                    --
-                                {% endif %}
-                            </div>
-                            <div class="text-xs text-base-content/60">Temperature</div>
+                            <div class="font-medium">{{ weather.visibility }} mi</div>
+                            <div class="text-xs text-base-content/60">Visibility</div>
                         </div>
                     </div>
 
@@ -172,24 +160,18 @@
                     </div>
 
                     <!-- Key Metrics Grid -->
-                    <div class="grid grid-cols-2 gap-2 text-sm justify-items-center text-center">
-                        <!-- Wind -->
-                        <div class="flex items-center gap-2">
-                            <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
-                            <div>
-                                <div class="font-medium">
-                                    {% if weather.wind.direction is not None %}{{ weather.wind.direction }}°{% else %}VRB{% endif %}
-                                    @ {{ weather.wind.speed }} kt
-                                    {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
-                                </div>
-                                <div class="text-xs text-base-content/60">Wind</div>
-                            </div>
-                        </div>
+                    <div class="grid grid-cols-4 gap-2 text-sm justify-items-center text-center items-center">
+                        <!-- Wind Arrow -->
+                        <div class="text-4xl font-bold" title="Wind direction">{{ weather.wind_arrow }}</div>
 
-                        <!-- Visibility -->
+                        <!-- Wind -->
                         <div>
-                            <div class="font-medium">{{ weather.visibility }} mi</div>
-                            <div class="text-xs text-base-content/60">Visibility</div>
+                            <div class="font-medium whitespace-nowrap">
+                                {{ weather.wind.direction_compass }}
+                                @ {{ weather.wind.speed }} kt
+                                {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
+                            </div>
+                            <div class="text-xs text-base-content/60">Wind</div>
                         </div>
 
                         <!-- Clouds/Ceiling -->
@@ -204,12 +186,10 @@
                             <div class="text-xs text-base-content/60">Ceiling</div>
                         </div>
 
-                        <!-- Forecast Period -->
+                        <!-- Visibility -->
                         <div>
-                            <div class="font-medium">
-                                {{ weather.period.start_time|date:"H:i" }}Z - {{ weather.period.end_time|date:"H:i" }}Z
-                            </div>
-                            <div class="text-xs text-base-content/60">Valid Period</div>
+                            <div class="font-medium">{{ weather.visibility }} mi</div>
+                            <div class="text-xs text-base-content/60">Visibility</div>
                         </div>
                     </div>
 
@@ -280,18 +260,18 @@
                     {% endif %}
 
                     <!-- Key Metrics Grid -->
-                    <div class="grid grid-cols-2 gap-2 text-sm justify-items-center text-center">
+                    <div class="grid grid-cols-4 gap-2 text-sm justify-items-center text-center items-center">
+                        <!-- Wind Arrow -->
+                        <div class="text-4xl font-bold" title="Wind direction">{{ weather.wind_arrow }}</div>
+
                         <!-- Wind -->
-                        <div class="flex items-center gap-2">
-                            <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
-                            <div>
-                                <div class="font-medium">
-                                    {% if weather.wind.direction is not None %}{{ weather.wind.direction_repr }}{% else %}VRB{% endif %}
-                                    @ {{ weather.wind.speed }} kt
-                                    {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
-                                </div>
-                                <div class="text-xs text-base-content/60">Wind</div>
+                        <div>
+                            <div class="font-medium whitespace-nowrap">
+                                {{ weather.wind.direction_compass }}
+                                @ {{ weather.wind.speed }} kt
+                                {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
                             </div>
+                            <div class="text-xs text-base-content/60">Wind</div>
                         </div>
 
                         <!-- Temperature -->
@@ -308,12 +288,10 @@
                         </div>
 
                         <!-- Precipitation -->
-                        {% if weather.precipitation_probability is not None %}
                         <div>
-                            <div class="font-medium">{{ weather.precipitation_probability }}%</div>
+                            <div class="font-medium">{% if weather.precipitation_probability is not None %}{{ weather.precipitation_probability }}%{% else %}--{% endif %}</div>
                             <div class="text-xs text-base-content/60">Rain Chance</div>
                         </div>
-                        {% endif %}
                     </div>
 
                     <!-- Cache/Time Info -->
@@ -372,18 +350,18 @@
                     </div>
 
                     <!-- Key Metrics Grid -->
-                    <div class="grid grid-cols-2 gap-2 text-sm justify-items-center text-center">
+                    <div class="grid grid-cols-4 gap-2 text-sm justify-items-center text-center items-center">
+                        <!-- Wind Arrow -->
+                        <div class="text-4xl font-bold" title="Wind direction">{{ weather.wind_arrow }}</div>
+
                         <!-- Wind -->
-                        <div class="flex items-center gap-2">
-                            <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
-                            <div>
-                                <div class="font-medium">
-                                    {% if weather.wind.direction is not None %}{{ weather.wind.direction }}°{% else %}VRB{% endif %}
-                                    @ {{ weather.wind.speed }} kt
-                                    {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
-                                </div>
-                                <div class="text-xs text-base-content/60">Max Wind</div>
+                        <div>
+                            <div class="font-medium whitespace-nowrap">
+                                {{ weather.wind.direction_compass }}
+                                @ {{ weather.wind.speed }} kt
+                                {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
                             </div>
+                            <div class="text-xs text-base-content/60">Max Wind</div>
                         </div>
 
                         <!-- Temperature -->
@@ -400,12 +378,10 @@
                         </div>
 
                         <!-- Precipitation -->
-                        {% if weather.precipitation_probability is not None %}
                         <div>
-                            <div class="font-medium">{{ weather.precipitation_probability }}%</div>
+                            <div class="font-medium">{% if weather.precipitation_probability is not None %}{{ weather.precipitation_probability }}%{% else %}--{% endif %}</div>
                             <div class="text-xs text-base-content/60">Rain Chance</div>
                         </div>
-                        {% endif %}
                     </div>
 
                     <!-- Extended forecast notice -->
