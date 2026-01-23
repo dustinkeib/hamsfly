@@ -1,103 +1,397 @@
 {% if weather_configured %}
     {% if weather %}
-        <div class="card bg-base-100 shadow-sm mb-4 border border-base-300">
-            <div class="card-body p-4">
-                <!-- Header with station and flight rules -->
-                <div class="flex items-center justify-between mb-2">
-                    <div class="flex items-center gap-2">
-                        <h4 class="font-semibold text-sm">Weather: {{ weather.station }}</h4>
-                        <span class="badge badge-{{ weather.flight_rules_color }} badge-sm">{{ weather.flight_rules }}</span>
+        {% if weather.source.value == 'unavailable' %}
+            {# Unavailable weather - show message #}
+            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300">
+                <div class="card-body p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="font-semibold text-sm">Weather Forecast</h4>
+                        <span class="badge badge-neutral badge-sm">{{ weather.source_label }}</span>
                     </div>
-                    <button
-                        class="btn btn-ghost btn-xs"
-                        hx-get="{% url 'weather_refresh' %}"
-                        hx-target="#weather-container"
-                        hx-swap="innerHTML"
-                        title="Refresh weather"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                    </button>
-                </div>
-
-                <!-- R/C Flying Assessment -->
-                <div class="mb-3">
-                    <span class="badge badge-{{ weather.rc_rating_color }} badge-md">
-                        {% with assessment=weather.rc_flying_assessment %}
-                            {% if assessment.rating == 'good' %}Good for R/C
-                            {% elif assessment.rating == 'marginal' %}Marginal
-                            {% elif assessment.rating == 'poor' %}Poor Conditions
-                            {% else %}No Fly
-                            {% endif %}
-                        {% endwith %}
-                    </span>
-                    <span class="text-xs text-base-content/70 ml-2">
-                        {% for reason in weather.rc_flying_assessment.reasons %}
-                            {{ reason }}{% if not forloop.last %} · {% endif %}
-                        {% endfor %}
-                    </span>
-                </div>
-
-                <!-- Key Metrics Grid -->
-                <div class="grid grid-cols-2 gap-2 text-sm">
-                    <!-- Wind -->
-                    <div class="flex items-center gap-2">
-                        <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
-                        <div>
-                            <div class="font-medium">
-                                {% if weather.wind.direction is not None %}{{ weather.wind.direction }}°{% else %}VRB{% endif %}
-                                @ {{ weather.wind.speed }} kt
-                                {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
-                            </div>
-                            <div class="text-xs text-base-content/60">Wind</div>
-                        </div>
+                    <div class="text-base-content/70 text-sm">
+                        {{ weather.message }}
                     </div>
-
-                    <!-- Visibility -->
-                    <div>
-                        <div class="font-medium">{{ weather.visibility }} mi</div>
-                        <div class="text-xs text-base-content/60">Visibility</div>
-                    </div>
-
-                    <!-- Clouds/Ceiling -->
-                    <div>
-                        <div class="font-medium">
-                            {% if weather.ceiling %}
-                                {{ weather.ceiling }} ft
-                            {% else %}
-                                Clear
-                            {% endif %}
-                        </div>
-                        <div class="text-xs text-base-content/60">Ceiling</div>
-                    </div>
-
-                    <!-- Temperature -->
-                    <div>
-                        <div class="font-medium">
-                            {% if weather.temperature is not None %}
-                                {{ weather.temperature_f }}°F
-                            {% else %}
-                                --
-                            {% endif %}
-                        </div>
-                        <div class="text-xs text-base-content/60">Temperature</div>
-                    </div>
-                </div>
-
-                <!-- Raw METAR -->
-                <div class="bg-base-200 rounded p-2 mt-3">
-                    <span class="text-xs font-bold text-base-content">METAR</span>
-                    <code class="text-xs break-all ml-2">{{ weather.raw_metar }}</code>
-                </div>
-
-                <!-- Cache/Time Info -->
-                <div class="text-xs text-base-content/50 mt-2">
-                    Observed: {{ weather.observation_time|date:"H:i" }}Z
-                    {% if weather.from_cache %} · Cached{% endif %}
                 </div>
             </div>
-        </div>
+
+        {% elif weather.source.value == 'metar' %}
+            {# METAR - Current conditions #}
+            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300">
+                <div class="card-body p-4">
+                    <!-- Header with station and flight rules -->
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <h4 class="font-semibold text-sm">Weather: {{ weather.station }}</h4>
+                            <span class="badge badge-{{ weather.flight_rules_color }} badge-sm">{{ weather.flight_rules }}</span>
+                            <span class="badge badge-primary badge-sm badge-outline">{{ weather.source_label }}</span>
+                        </div>
+                        <button
+                            class="btn btn-ghost btn-xs"
+                            hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
+                            hx-target="#weather-container"
+                            hx-swap="innerHTML"
+                            title="Refresh weather"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- R/C Flying Assessment -->
+                    <div class="mb-3">
+                        <span class="badge badge-{{ weather.rc_rating_color }} badge-md">
+                            {% with assessment=weather.rc_flying_assessment %}
+                                {% if assessment.rating == 'good' %}Good for R/C
+                                {% elif assessment.rating == 'marginal' %}Marginal
+                                {% elif assessment.rating == 'poor' %}Poor Conditions
+                                {% else %}No Fly
+                                {% endif %}
+                            {% endwith %}
+                        </span>
+                        <span class="text-xs text-base-content/70 ml-2">
+                            {% for reason in weather.rc_flying_assessment.reasons %}
+                                {{ reason }}{% if not forloop.last %} · {% endif %}
+                            {% endfor %}
+                        </span>
+                    </div>
+
+                    <!-- Key Metrics Grid -->
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <!-- Wind -->
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
+                            <div>
+                                <div class="font-medium">
+                                    {% if weather.wind.direction is not None %}{{ weather.wind.direction }}°{% else %}VRB{% endif %}
+                                    @ {{ weather.wind.speed }} kt
+                                    {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
+                                </div>
+                                <div class="text-xs text-base-content/60">Wind</div>
+                            </div>
+                        </div>
+
+                        <!-- Visibility -->
+                        <div>
+                            <div class="font-medium">{{ weather.visibility }} mi</div>
+                            <div class="text-xs text-base-content/60">Visibility</div>
+                        </div>
+
+                        <!-- Clouds/Ceiling -->
+                        <div>
+                            <div class="font-medium">
+                                {% if weather.ceiling %}
+                                    {{ weather.ceiling }} ft
+                                {% else %}
+                                    Clear
+                                {% endif %}
+                            </div>
+                            <div class="text-xs text-base-content/60">Ceiling</div>
+                        </div>
+
+                        <!-- Temperature -->
+                        <div>
+                            <div class="font-medium">
+                                {% if weather.temperature is not None %}
+                                    {{ weather.temperature_f }}°F
+                                {% else %}
+                                    --
+                                {% endif %}
+                            </div>
+                            <div class="text-xs text-base-content/60">Temperature</div>
+                        </div>
+                    </div>
+
+                    <!-- Raw METAR -->
+                    <div class="bg-base-200 rounded p-2 mt-3">
+                        <span class="text-xs font-bold text-base-content">METAR</span>
+                        <code class="text-xs break-all ml-2">{{ weather.raw_metar }}</code>
+                    </div>
+
+                    <!-- Cache/Time Info -->
+                    <div class="text-xs text-base-content/50 mt-2">
+                        Observed: {{ weather.observation_time|date:"H:i" }}Z
+                        {% if weather.from_cache %} · Cached{% endif %}
+                    </div>
+                </div>
+            </div>
+
+        {% elif weather.source.value == 'taf' %}
+            {# TAF - Tomorrow's forecast #}
+            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300">
+                <div class="card-body p-4">
+                    <!-- Header with station and flight rules -->
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <h4 class="font-semibold text-sm">Forecast: {{ weather.station }}</h4>
+                            <span class="badge badge-{{ weather.flight_rules_color }} badge-sm">{{ weather.flight_rules }}</span>
+                            <span class="badge badge-secondary badge-sm badge-outline">{{ weather.source_label }}</span>
+                        </div>
+                        <button
+                            class="btn btn-ghost btn-xs"
+                            hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
+                            hx-target="#weather-container"
+                            hx-swap="innerHTML"
+                            title="Refresh weather"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- R/C Flying Assessment -->
+                    <div class="mb-3">
+                        <span class="badge badge-{{ weather.rc_rating_color }} badge-md">
+                            {% with assessment=weather.rc_flying_assessment %}
+                                {% if assessment.rating == 'good' %}Good for R/C
+                                {% elif assessment.rating == 'marginal' %}Marginal
+                                {% elif assessment.rating == 'poor' %}Poor Conditions
+                                {% else %}No Fly
+                                {% endif %}
+                            {% endwith %}
+                        </span>
+                        <span class="text-xs text-base-content/70 ml-2">
+                            {% for reason in weather.rc_flying_assessment.reasons %}
+                                {{ reason }}{% if not forloop.last %} · {% endif %}
+                            {% endfor %}
+                        </span>
+                    </div>
+
+                    <!-- Key Metrics Grid -->
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <!-- Wind -->
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
+                            <div>
+                                <div class="font-medium">
+                                    {% if weather.wind.direction is not None %}{{ weather.wind.direction }}°{% else %}VRB{% endif %}
+                                    @ {{ weather.wind.speed }} kt
+                                    {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
+                                </div>
+                                <div class="text-xs text-base-content/60">Wind</div>
+                            </div>
+                        </div>
+
+                        <!-- Visibility -->
+                        <div>
+                            <div class="font-medium">{{ weather.visibility }} mi</div>
+                            <div class="text-xs text-base-content/60">Visibility</div>
+                        </div>
+
+                        <!-- Clouds/Ceiling -->
+                        <div>
+                            <div class="font-medium">
+                                {% if weather.ceiling %}
+                                    {{ weather.ceiling }} ft
+                                {% else %}
+                                    Clear
+                                {% endif %}
+                            </div>
+                            <div class="text-xs text-base-content/60">Ceiling</div>
+                        </div>
+
+                        <!-- Forecast Period -->
+                        <div>
+                            <div class="font-medium">
+                                {{ weather.period.start_time|date:"H:i" }}Z - {{ weather.period.end_time|date:"H:i" }}Z
+                            </div>
+                            <div class="text-xs text-base-content/60">Valid Period</div>
+                        </div>
+                    </div>
+
+                    <!-- Raw TAF -->
+                    <div class="bg-base-200 rounded p-2 mt-3">
+                        <span class="text-xs font-bold text-base-content">TAF</span>
+                        <code class="text-xs break-all ml-2">{{ weather.raw_taf }}</code>
+                    </div>
+
+                    <!-- Cache/Time Info -->
+                    <div class="text-xs text-base-content/50 mt-2">
+                        Issued: {{ weather.issue_time|date:"H:i" }}Z
+                        {% if weather.from_cache %} · Cached{% endif %}
+                    </div>
+                </div>
+            </div>
+
+        {% elif weather.source.value == 'nws' %}
+            {# NWS - 2-7 day forecast #}
+            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300">
+                <div class="card-body p-4">
+                    <!-- Header -->
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <h4 class="font-semibold text-sm">{{ weather.target_date|date:"l" }} Forecast</h4>
+                            <span class="badge badge-accent badge-sm badge-outline">{{ weather.source_label }}</span>
+                        </div>
+                        <button
+                            class="btn btn-ghost btn-xs"
+                            hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
+                            hx-target="#weather-container"
+                            hx-swap="innerHTML"
+                            title="Refresh weather"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- R/C Flying Assessment -->
+                    <div class="mb-3">
+                        <span class="badge badge-{{ weather.rc_rating_color }} badge-md">
+                            {% with assessment=weather.rc_flying_assessment %}
+                                {% if assessment.rating == 'good' %}Good for R/C
+                                {% elif assessment.rating == 'marginal' %}Marginal
+                                {% elif assessment.rating == 'poor' %}Poor Conditions
+                                {% else %}No Fly
+                                {% endif %}
+                            {% endwith %}
+                        </span>
+                        <span class="text-xs text-base-content/70 ml-2">
+                            {% for reason in weather.rc_flying_assessment.reasons %}
+                                {{ reason }}{% if not forloop.last %} · {% endif %}
+                            {% endfor %}
+                        </span>
+                    </div>
+
+                    <!-- Short Forecast -->
+                    {% if weather.short_forecast %}
+                    <div class="text-sm font-medium mb-3">{{ weather.short_forecast }}</div>
+                    {% endif %}
+
+                    <!-- Key Metrics Grid -->
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <!-- Wind -->
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
+                            <div>
+                                <div class="font-medium">
+                                    {% if weather.wind.direction is not None %}{{ weather.wind.direction_repr }}{% else %}VRB{% endif %}
+                                    @ {{ weather.wind.speed }} kt
+                                    {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
+                                </div>
+                                <div class="text-xs text-base-content/60">Wind</div>
+                            </div>
+                        </div>
+
+                        <!-- Temperature -->
+                        <div>
+                            <div class="font-medium">
+                                {% if weather.temperature_high is not None %}
+                                    {{ weather.temperature_high }}°F
+                                    {% if weather.temperature_low is not None %}/ {{ weather.temperature_low }}°F{% endif %}
+                                {% else %}
+                                    --
+                                {% endif %}
+                            </div>
+                            <div class="text-xs text-base-content/60">High{% if weather.temperature_low is not None %}/Low{% endif %}</div>
+                        </div>
+
+                        <!-- Precipitation -->
+                        {% if weather.precipitation_probability is not None %}
+                        <div>
+                            <div class="font-medium">{{ weather.precipitation_probability }}%</div>
+                            <div class="text-xs text-base-content/60">Rain Chance</div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Cache/Time Info -->
+                    <div class="text-xs text-base-content/50 mt-2">
+                        National Weather Service forecast
+                        {% if weather.from_cache %} · Cached{% endif %}
+                    </div>
+                </div>
+            </div>
+
+        {% elif weather.source.value == 'openmeteo' %}
+            {# Open-Meteo - 8-16 day extended forecast #}
+            <div class="card bg-base-100 shadow-sm mb-4 border border-base-300">
+                <div class="card-body p-4">
+                    <!-- Header -->
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <h4 class="font-semibold text-sm">{{ weather.target_date|date:"l, M j" }} Forecast</h4>
+                            <span class="badge badge-info badge-sm badge-outline">{{ weather.source_label }}</span>
+                        </div>
+                        <button
+                            class="btn btn-ghost btn-xs"
+                            hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
+                            hx-target="#weather-container"
+                            hx-swap="innerHTML"
+                            title="Refresh weather"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- R/C Flying Assessment -->
+                    <div class="mb-3">
+                        <span class="badge badge-{{ weather.rc_rating_color }} badge-md">
+                            {% with assessment=weather.rc_flying_assessment %}
+                                {% if assessment.rating == 'good' %}Good for R/C
+                                {% elif assessment.rating == 'marginal' %}Marginal
+                                {% elif assessment.rating == 'poor' %}Poor Conditions
+                                {% else %}No Fly
+                                {% endif %}
+                            {% endwith %}
+                        </span>
+                        <span class="text-xs text-base-content/70 ml-2">
+                            {% for reason in weather.rc_flying_assessment.reasons %}
+                                {{ reason }}{% if not forloop.last %} · {% endif %}
+                            {% endfor %}
+                        </span>
+                    </div>
+
+                    <!-- Key Metrics Grid -->
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <!-- Wind -->
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg" title="Wind direction">{{ weather.wind_arrow }}</span>
+                            <div>
+                                <div class="font-medium">
+                                    {% if weather.wind.direction is not None %}{{ weather.wind.direction }}°{% else %}VRB{% endif %}
+                                    @ {{ weather.wind.speed }} kt
+                                    {% if weather.wind.gust %}G{{ weather.wind.gust }}{% endif %}
+                                </div>
+                                <div class="text-xs text-base-content/60">Max Wind</div>
+                            </div>
+                        </div>
+
+                        <!-- Temperature -->
+                        <div>
+                            <div class="font-medium">
+                                {% if weather.temperature_high is not None %}
+                                    {{ weather.temperature_high_f }}°F
+                                    {% if weather.temperature_low is not None %}/ {{ weather.temperature_low_f }}°F{% endif %}
+                                {% else %}
+                                    --
+                                {% endif %}
+                            </div>
+                            <div class="text-xs text-base-content/60">High{% if weather.temperature_low is not None %}/Low{% endif %}</div>
+                        </div>
+
+                        <!-- Precipitation -->
+                        {% if weather.precipitation_probability is not None %}
+                        <div>
+                            <div class="font-medium">{{ weather.precipitation_probability }}%</div>
+                            <div class="text-xs text-base-content/60">Rain Chance</div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Extended forecast notice -->
+                    <div class="text-xs text-base-content/50 mt-2">
+                        Extended forecast (accuracy decreases beyond 7 days)
+                        {% if weather.from_cache %} · Cached{% endif %}
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+
     {% elif weather_error %}
         <div class="alert alert-warning mb-4">
             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24">

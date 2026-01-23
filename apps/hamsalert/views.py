@@ -56,7 +56,7 @@ def day_events(request, year, month, day):
     event_date = date(year, month, day)
     events = Event.objects.filter(date=event_date)
 
-    # Fetch weather data
+    # Fetch weather data for the selected date
     weather = None
     weather_error = None
     weather_service = WeatherService()
@@ -64,7 +64,7 @@ def day_events(request, year, month, day):
     if weather_service.is_configured():
         station = request.GET.get('station')
         try:
-            weather = weather_service.get_weather(station)
+            weather = weather_service.get_weather_for_date(event_date, station)
         except WeatherServiceError as e:
             weather_error = str(e)
 
@@ -85,11 +85,24 @@ def weather_refresh(request):
     weather_error = None
     weather_service = WeatherService()
 
+    # Get target date from request params
+    year = request.GET.get('year')
+    month = request.GET.get('month')
+    day = request.GET.get('day')
+
+    if year and month and day:
+        try:
+            target_date = date(int(year), int(month), int(day))
+        except (ValueError, TypeError):
+            target_date = date.today()
+    else:
+        target_date = date.today()
+
     if weather_service.is_configured():
         station = request.GET.get('station')
-        weather_service.clear_cache(station)
+        weather_service.clear_cache(station, target_date)
         try:
-            weather = weather_service.get_weather(station)
+            weather = weather_service.get_weather_for_date(target_date, station)
         except WeatherServiceError as e:
             weather_error = str(e)
 
@@ -97,5 +110,6 @@ def weather_refresh(request):
         'weather': weather,
         'weather_error': weather_error,
         'weather_configured': weather_service.is_configured(),
+        'date': target_date,
     }
     return render(request, 'hamsalert/partials/weather_card.html', context)

@@ -135,4 +135,13 @@ CACHES = {
 # AVWX Weather API
 AVWX_API_TOKEN = os.environ.get('AVWX_API_TOKEN', '')
 AVWX_DEFAULT_STATION = 'KACV'  # Arcata-Eureka Airport (near Samoa)
-AVWX_CACHE_TTL = 1800  # 30 minutes
+
+# NWS API Configuration
+NWS_DEFAULT_LOCATION = (40.9781, -124.1086)  # Lat/lon near KACV
+NWS_USER_AGENT = 'HamsAlert/1.0'
+
+# Weather Cache TTLs
+WEATHER_METAR_CACHE_TTL = 1800   # 30 min
+WEATHER_TAF_CACHE_TTL = 3600    # 1 hour
+WEATHER_NWS_CACHE_TTL = 7200    # 2 hours
+WEATHER_OPENMETEO_CACHE_TTL = 14400  # 4 hours (extended forecast)
