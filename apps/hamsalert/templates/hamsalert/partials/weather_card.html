@@ -84,19 +84,16 @@
                         <div class="text-xs text-base-content/60">Rain</div>
                     </div>
 
-                    <!-- Temperature - always available (METAR/NWS/OpenMeteo) -->
+                    <!-- Temperature - always High/Low (NWS/OpenMeteo) -->
                     <div>
-                        {% if weather.metar and weather.metar.temperature_f is not None %}
-                        <div class="font-medium">{{ weather.metar.temperature_f }}°F</div>
-                        <div class="text-xs text-base-content/60">Temp</div>
-                        {% elif weather.temperature_high_f is not None %}
+                        {% if weather.temperature_high_f is not None %}
                         <div class="font-medium whitespace-nowrap">
                             {{ weather.temperature_high_f }}°{% if weather.temperature_low_f is not None %}/{{ weather.temperature_low_f }}°{% endif %}
                         </div>
                         <div class="text-xs text-base-content/60">Hi{% if weather.temperature_low_f is not None %}/Lo{% endif %}</div>
                         {% else %}
                         <div class="font-medium">--</div>
-                        <div class="text-xs text-base-content/60">Temp</div>
+                        <div class="text-xs text-base-content/60">Hi/Lo</div>
                         {% endif %}
                     </div>
 
