@@ -32,6 +32,9 @@
                         {% if weather.openmeteo %}
                         <span class="badge badge-info badge-sm badge-outline">Extended</span>
                         {% endif %}
+                        {% if weather.historical %}
+                        <span class="badge badge-neutral badge-sm badge-outline">Historical</span>
+                        {% endif %}
                     </div>
                     <button
                         class="btn btn-ghost btn-xs"

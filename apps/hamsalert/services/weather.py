@@ -33,6 +33,7 @@ class WeatherSource(Enum):
     TAF = 'taf'
     NWS = 'nws'
     OPENMETEO = 'openmeteo'
+    HISTORICAL = 'historical'
     UNAVAILABLE = 'unavailable'
 
 
@@ -433,6 +434,51 @@ class OpenMeteoForecastData:
 
 
 @dataclass
+class HistoricalWeatherData:
+    """Historical weather data from Open-Meteo Archive API."""
+    location: tuple[float, float]  # lat, lon
+    target_date: date
+    wind: WindData
+    temperature_high: Optional[int] = None  # Celsius
+    temperature_low: Optional[int] = None
+    precipitation_sum: Optional[float] = None  # mm
+    cached_at: datetime = field(default_factory=timezone.now)
+    from_cache: bool = False
+    source: WeatherSource = WeatherSource.HISTORICAL
+
+    @property
+    def temperature_high_f(self) -> Optional[int]:
+        if self.temperature_high is None:
+            return None
+        return round(self.temperature_high * 9 / 5 + 32)
+
+    @property
+    def temperature_low_f(self) -> Optional[int]:
+        if self.temperature_low is None:
+            return None
+        return round(self.temperature_low * 9 / 5 + 32)
+
+    @property
+    def rc_flying_assessment(self) -> dict:
+        return calculate_rc_assessment(
+            wind_speed=self.wind.speed,
+            wind_gust=self.wind.gust,
+        )
+
+    @property
+    def rc_rating_color(self) -> str:
+        return rc_rating_color(self.rc_flying_assessment['rating'])
+
+    @property
+    def wind_arrow(self) -> str:
+        return wind_arrow(self.wind.direction)
+
+    @property
+    def source_label(self) -> str:
+        return 'Historical'
+
+
+@dataclass
 class UnavailableWeatherData:
     """Placeholder when weather data is unavailable."""
     message: str
@@ -445,7 +491,7 @@ class UnavailableWeatherData:
 
 
 # Type alias for all weather data types
-AnyWeatherData = WeatherData | TafForecastData | NwsForecastData | OpenMeteoForecastData | UnavailableWeatherData
+AnyWeatherData = WeatherData | TafForecastData | NwsForecastData | OpenMeteoForecastData | HistoricalWeatherData | UnavailableWeatherData
 
 
 @dataclass
@@ -456,6 +502,7 @@ class CompositeWeatherData:
     taf: Optional[TafForecastData] = None
     nws: Optional[NwsForecastData] = None
     openmeteo: Optional[OpenMeteoForecastData] = None
+    historical: Optional[HistoricalWeatherData] = None
     cached_at: datetime = field(default_factory=timezone.now)
     source: WeatherSource = WeatherSource.METAR  # Primary source for compatibility
 
@@ -471,11 +518,13 @@ class CompositeWeatherData:
             result.append(WeatherSource.NWS)
         if self.openmeteo:
             result.append(WeatherSource.OPENMETEO)
+        if self.historical:
+            result.append(WeatherSource.HISTORICAL)
         return result
 
     @property
     def wind(self) -> Optional[WindData]:
-        """Best available wind data (METAR > TAF > NWS > OpenMeteo)."""
+        """Best available wind data (METAR > TAF > NWS > OpenMeteo > Historical)."""
         if self.metar:
             return self.metar.wind
         if self.taf:
@@ -484,6 +533,8 @@ class CompositeWeatherData:
             return self.nws.wind
         if self.openmeteo:
             return self.openmeteo.wind
+        if self.historical:
+            return self.historical.wind
         return None
 
     @property
@@ -497,17 +548,21 @@ class CompositeWeatherData:
             return WeatherSource.NWS
         if self.openmeteo:
             return WeatherSource.OPENMETEO
+        if self.historical:
+            return WeatherSource.HISTORICAL
         return None
 
     @property
     def temperature_f(self) -> Optional[int]:
-        """Best available temperature in Fahrenheit (METAR > NWS > OpenMeteo)."""
+        """Best available temperature in Fahrenheit (METAR > NWS > OpenMeteo > Historical)."""
         if self.metar and self.metar.temperature_f is not None:
             return self.metar.temperature_f
         if self.nws and self.nws.temperature_high is not None:
             return self.nws.temperature_high
         if self.openmeteo and self.openmeteo.temperature_high_f is not None:
             return self.openmeteo.temperature_high_f
+        if self.historical and self.historical.temperature_high_f is not None:
+            return self.historical.temperature_high_f
         return None
 
     @property
@@ -519,24 +574,30 @@ class CompositeWeatherData:
             return WeatherSource.NWS
         if self.openmeteo and self.openmeteo.temperature_high_f is not None:
             return WeatherSource.OPENMETEO
+        if self.historical and self.historical.temperature_high_f is not None:
+            return WeatherSource.HISTORICAL
         return None
 
     @property
     def temperature_high_f(self) -> Optional[int]:
-        """High temperature for forecast days."""
+        """High temperature for forecast days or historical."""
         if self.nws and self.nws.temperature_high is not None:
             return self.nws.temperature_high
         if self.openmeteo and self.openmeteo.temperature_high_f is not None:
             return self.openmeteo.temperature_high_f
+        if self.historical and self.historical.temperature_high_f is not None:
+            return self.historical.temperature_high_f
         return None
 
     @property
     def temperature_low_f(self) -> Optional[int]:
-        """Low temperature for forecast days."""
+        """Low temperature for forecast days or historical."""
         if self.nws and self.nws.temperature_low is not None:
             return self.nws.temperature_low
         if self.openmeteo and self.openmeteo.temperature_low_f is not None:
             return self.openmeteo.temperature_low_f
+        if self.historical and self.historical.temperature_low_f is not None:
+            return self.historical.temperature_low_f
         return None
 
     @property
@@ -680,6 +741,8 @@ class CompositeWeatherData:
             return True
         if self.openmeteo and self.openmeteo.from_cache:
             return True
+        if self.historical and self.historical.from_cache:
+            return True
         return False
 
     @property
@@ -694,6 +757,8 @@ class CompositeWeatherData:
             labels.append('NWS')
         if self.openmeteo:
             labels.append('Extended')
+        if self.historical:
+            labels.append('Historical')
         return ' + '.join(labels) if labels else 'Unavailable'
 
     def get_shortest_ttl(self, ttls: dict[WeatherSource, int]) -> int:
@@ -728,6 +793,7 @@ class WeatherService:
         self.taf_cache_ttl = getattr(settings, 'WEATHER_TAF_CACHE_TTL', 3600)
         self.nws_cache_ttl = getattr(settings, 'WEATHER_NWS_CACHE_TTL', 7200)
         self.openmeteo_cache_ttl = getattr(settings, 'WEATHER_OPENMETEO_CACHE_TTL', 14400)
+        self.historical_cache_ttl = getattr(settings, 'WEATHER_HISTORICAL_CACHE_TTL', 86400)  # 24 hours
 
     def _cache_key(self, prefix: str, identifier: str) -> str:
         return f"{self.CACHE_KEY_PREFIX}{prefix}_{identifier}"
@@ -770,6 +836,7 @@ class WeatherService:
         Fetch weather data from ALL applicable sources for a date.
 
         Data availability by day:
+        - Past dates: Historical (Open-Meteo Archive)
         - Day 0 (today): METAR + TAF + NWS + OpenMeteo
         - Day 1 (tomorrow): TAF + NWS + OpenMeteo
         - Days 2-7: NWS + OpenMeteo
@@ -781,8 +848,19 @@ class WeatherService:
         local_today = datetime.now(self.local_timezone).date()
         days_out = (target_date - local_today).days
 
+        # Historical data for past dates
         if days_out < 0:
-            return CompositeWeatherData(target_date=target_date)
+            try:
+                historical = self._get_historical_weather(target_date)
+                return CompositeWeatherData(
+                    target_date=target_date,
+                    historical=historical,
+                    cached_at=timezone.now(),
+                    source=WeatherSource.HISTORICAL,
+                )
+            except WeatherServiceError as e:
+                logger.warning(f"Historical fetch failed: {e}")
+                return CompositeWeatherData(target_date=target_date)
 
         if days_out > 16:
             return CompositeWeatherData(target_date=target_date)
@@ -883,6 +961,8 @@ class WeatherService:
         days_out = (target_date - local_today).days
 
         # Clear all applicable caches
+        if days_out < 0:
+            cache.delete(self._cache_key('historical', f"{lat}_{lon}_{target_date.isoformat()}"))
         if days_out == 0:
             cache.delete(self._cache_key('metar', station))
         if days_out <= 1:
@@ -1467,6 +1547,113 @@ class WeatherService:
         except (KeyError, TypeError, IndexError) as e:
             logger.error(f"Failed to parse Open-Meteo response: {e}")
             raise WeatherServiceError(f"Failed to parse Open-Meteo data: {e}")
+
+    def _get_historical_weather(self, target_date: date) -> Optional[HistoricalWeatherData]:
+        """Get historical weather data for a past date."""
+        lat, lon = self.nws_location
+        cache_key = self._cache_key('historical', f"{lat}_{lon}_{target_date.isoformat()}")
+
+        # Try cache first
+        cached_data = cache.get(cache_key)
+        if cached_data is not None:
+            cached_data.from_cache = True
+            logger.debug(f"Historical cache hit for {lat},{lon} on {target_date}")
+            return cached_data
+
+        # Fetch from API
+        logger.info(f"Fetching historical weather for {lat},{lon} on {target_date}")
+        try:
+            data = self._fetch_historical_weather(target_date)
+            if data:
+                cache.set(cache_key, data, self.historical_cache_ttl)
+            return data
+        except WeatherServiceError:
+            raise
+
+    def _fetch_historical_weather(self, target_date: date) -> Optional[HistoricalWeatherData]:
+        """Fetch historical weather from Open-Meteo Archive API."""
+        lat, lon = self.nws_location
+
+        params = {
+            'latitude': lat,
+            'longitude': lon,
+            'start_date': target_date.isoformat(),
+            'end_date': target_date.isoformat(),
+            'daily': ','.join([
+                'temperature_2m_max',
+                'temperature_2m_min',
+                'precipitation_sum',
+                'wind_speed_10m_max',
+                'wind_gusts_10m_max',
+                'wind_direction_10m_dominant',
+            ]),
+            'timezone': 'auto',
+        }
+
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.get(
+                    'https://archive-api.open-meteo.com/v1/archive',
+                    params=params
+                )
+
+                if response.status_code != 200:
+                    logger.warning(f"Open-Meteo Archive API error: {response.status_code}")
+                    raise WeatherServiceError(f"Open-Meteo Archive API error: {response.status_code}")
+
+                return self._parse_historical_response(response.json(), target_date)
+
+        except httpx.TimeoutException:
+            raise WeatherServiceError("Open-Meteo Archive API request timed out")
+        except httpx.RequestError as e:
+            raise WeatherServiceError(f"Open-Meteo Archive API request failed: {e}")
+
+    def _parse_historical_response(self, data: dict, target_date: date) -> Optional[HistoricalWeatherData]:
+        """Parse Open-Meteo Archive API response."""
+        try:
+            daily = data.get('daily', {})
+            dates = daily.get('time', [])
+
+            # Find index for target date
+            target_str = target_date.isoformat()
+            if target_str not in dates:
+                return None
+
+            idx = dates.index(target_str)
+
+            # Get values for target date
+            temp_max = daily.get('temperature_2m_max', [])[idx]
+            temp_min = daily.get('temperature_2m_min', [])[idx]
+            precip_sum = daily.get('precipitation_sum', [])[idx]
+            wind_speed_kmh = daily.get('wind_speed_10m_max', [])[idx] or 0
+            wind_gust_kmh = daily.get('wind_gusts_10m_max', [])[idx]
+            wind_dir = daily.get('wind_direction_10m_dominant', [])[idx]
+
+            # Convert km/h to knots (1 km/h = 0.54 knots)
+            wind_speed_kt = round(wind_speed_kmh * 0.54)
+            wind_gust_kt = round(wind_gust_kmh * 0.54) if wind_gust_kmh else None
+
+            wind = WindData(
+                direction=wind_dir,
+                speed=wind_speed_kt,
+                gust=wind_gust_kt,
+                direction_repr=str(wind_dir) if wind_dir else 'VRB',
+            )
+
+            return HistoricalWeatherData(
+                location=self.nws_location,
+                target_date=target_date,
+                wind=wind,
+                temperature_high=round(temp_max) if temp_max is not None else None,
+                temperature_low=round(temp_min) if temp_min is not None else None,
+                precipitation_sum=precip_sum,
+                cached_at=timezone.now(),
+                source=WeatherSource.HISTORICAL,
+            )
+
+        except (KeyError, TypeError, IndexError) as e:
+            logger.error(f"Failed to parse historical response: {e}")
+            raise WeatherServiceError(f"Failed to parse historical data: {e}")
 
     def clear_cache(self, station: Optional[str] = None, target_date: Optional[date] = None) -> None:
         """Clear cached weather data."""

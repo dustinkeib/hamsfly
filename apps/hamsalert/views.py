@@ -15,6 +15,7 @@ WEATHER_CACHE_TTLS = {
     WeatherSource.TAF: 3600,        # 1 hour
     WeatherSource.NWS: 7200,        # 2 hours
     WeatherSource.OPENMETEO: 14400, # 4 hours
+    WeatherSource.HISTORICAL: 86400, # 24 hours
 }
 
 
