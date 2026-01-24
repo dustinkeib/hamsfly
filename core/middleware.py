@@ -14,8 +14,8 @@ class AdminIPRestrictMiddleware:
 
     def __call__(self, request):
         if request.path.startswith('/admin/'):
-            # Get allowed IPs from env (read each request for flexibility)
-            allowed = os.environ.get('ADMIN_ALLOWED_IPS', '')
+            # Get allowed IPs from env, default to localhost only (secure by default)
+            allowed = os.environ.get('ADMIN_ALLOWED_IPS', '127.0.0.1')
             allowed_ips = [ip.strip() for ip in allowed.split(',') if ip.strip()]
 
             # Get client IP, checking X-Forwarded-For for proxies (Render)
@@ -25,7 +25,7 @@ class AdminIPRestrictMiddleware:
             else:
                 ip = request.META.get('REMOTE_ADDR')
 
-            if allowed_ips and ip not in allowed_ips:
-                return HttpResponseForbidden(f'Forbidden - IP: {ip}, allowed: {allowed_ips}')
+            if ip not in allowed_ips:
+                return HttpResponseForbidden('Forbidden')
 
         return self.get_response(request)
