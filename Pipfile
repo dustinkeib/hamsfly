@@ -8,6 +8,8 @@ django = ">=6.0"
 python-dotenv = "*"
 httpx = "*"
 gunicorn = "*"
+psycopg2-binary = "*"
+dj-database-url = "*"
 
 [dev-packages]
 
