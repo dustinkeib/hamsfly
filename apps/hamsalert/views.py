@@ -1,6 +1,7 @@
 import calendar
 from datetime import date
 
+from django.http import JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.http import require_GET
@@ -43,6 +44,12 @@ def get_refresh_info(weather) -> dict:
     elapsed = (now - cached_at).total_seconds()
     remaining = max(int(ttl - elapsed), 60)  # minimum 60s
     return {'seconds': remaining, 'minutes': (remaining + 59) // 60}
+
+
+@require_GET
+def health(request):
+    """Health check endpoint to keep Render free instances active."""
+    return JsonResponse({'status': 'ok'})
 
 
 def calendar_view(request):
