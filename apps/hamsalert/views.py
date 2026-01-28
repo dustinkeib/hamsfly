@@ -212,9 +212,13 @@ def hourly_forecast(request, year, month, day):
     except WeatherServiceError as e:
         error = str(e)
 
+    is_today = target_date == local_today
+    now_hour = str(datetime.now(local_tz).hour) if is_today else ""
+
     context = {
         'target_date': target_date,
         'hourly': hourly_data,
         'error': error,
+        'now_hour': now_hour,
     }
     return render(request, 'hamsalert/hourly_forecast.html', context)

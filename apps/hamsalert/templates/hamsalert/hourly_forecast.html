@@ -35,7 +35,7 @@
                     <span class="text-right">Rain</span>
                 </div>
                 {% for hour in hourly.hours %}
-                <div class="grid grid-cols-[1fr_1fr_1fr_2fr_1fr] gap-x-1 items-center py-1.5 {% if forloop.counter|divisibleby:2 %}bg-base-200/50{% endif %}">
+                <div class="grid grid-cols-[1fr_1fr_1fr_2fr_1fr] gap-x-1 items-center py-1.5 {% if forloop.counter|divisibleby:2 %}bg-base-200/50{% endif %} {% if now_hour and hour.time|date:"G" == now_hour %}![border-top:2px_solid_oklch(var(--p))]{% endif %}">
                     <span class="font-medium">{{ hour.time|time:"g A" }}</span>
                     <span class="truncate text-base-content/70 text-center">{{ hour.weather_description }}</span>
                     <span class="text-right">{% if hour.temperature_f is not None %}{{ hour.temperature_f }}°{% else %}--{% endif %}</span>
