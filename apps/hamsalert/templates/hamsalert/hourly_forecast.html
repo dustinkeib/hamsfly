@@ -31,7 +31,7 @@
                     <span>Time</span>
                     <span class="text-center">Conditions</span>
                     <span class="text-right">Temp</span>
-                    <span class="text-center pl-6">Wind</span>
+                    <span class="pl-8">Wind</span>
                     <span class="text-right">Rain</span>
                 </div>
                 {% for hour in hourly.hours %}
@@ -39,7 +39,7 @@
                     <span class="font-medium">{{ hour.time|time:"H:i" }}</span>
                     <span class="truncate text-base-content/70 text-center">{{ hour.weather_description }}</span>
                     <span class="text-right">{% if hour.temperature_f is not None %}{{ hour.temperature_f }}°{% else %}--{% endif %}</span>
-                    <span class="pl-6 whitespace-nowrap text-center">{{ hour.wind_arrow }} {{ hour.direction_compass }} {{ hour.wind_speed_kt }}<span class="text-xs">kt</span>{% if hour.wind_gusts_kt is not None %}<span class="text-base-content/50">g{{ hour.wind_gusts_kt }}</span>{% endif %}</span>
+                    <span class="pl-8 whitespace-nowrap"><span class="inline-block w-5 text-center">{{ hour.wind_arrow }}</span>{{ hour.direction_compass }} {{ hour.wind_speed_kt }}<span class="text-xs">kt</span>{% if hour.wind_gusts_kt is not None %}<span class="text-base-content/50">g{{ hour.wind_gusts_kt }}</span>{% endif %}</span>
                     <span class="text-right">{% if hour.precipitation_probability is not None %}{{ hour.precipitation_probability }}%{% else %}--{% endif %}</span>
                 </div>
                 {% if now_hour and hour.time|date:"G" == now_hour %}
