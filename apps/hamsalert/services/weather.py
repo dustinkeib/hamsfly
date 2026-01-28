@@ -11,12 +11,15 @@ Implements caching to stay within API rate limits.
 """
 
 import logging
+import random
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -868,6 +871,11 @@ class WeatherService:
 
     CACHE_KEY_PREFIX = 'weather_'
 
+    # Rate limiting configuration
+    MAX_RETRIES = 3
+    BASE_DELAY = 1.0
+    MAX_DELAY = 30.0
+
     def __init__(self):
         self.api_token = getattr(settings, 'AVWX_API_TOKEN', '')
         self.base_url = 'https://avwx.rest/api'
@@ -882,6 +890,307 @@ class WeatherService:
         self.nws_cache_ttl = getattr(settings, 'WEATHER_NWS_CACHE_TTL', 7200)
         self.openmeteo_cache_ttl = getattr(settings, 'WEATHER_OPENMETEO_CACHE_TTL', 14400)
         self.historical_cache_ttl = getattr(settings, 'WEATHER_HISTORICAL_CACHE_TTL', 86400)  # 24 hours
+
+        # Rate limiting settings (can be overridden via settings)
+        self.max_retries = getattr(settings, 'OPENMETEO_MAX_RETRIES', self.MAX_RETRIES)
+        self.base_delay = getattr(settings, 'OPENMETEO_BASE_DELAY', self.BASE_DELAY)
+        self.max_delay = getattr(settings, 'OPENMETEO_MAX_DELAY', self.MAX_DELAY)
+
+    def _make_request_with_retry(
+        self,
+        url: str,
+        params: dict,
+        timeout: float = 10.0,
+        headers: Optional[dict] = None,
+    ) -> httpx.Response:
+        """
+        Make HTTP GET request with exponential backoff retry on 429/timeout errors.
+
+        Args:
+            url: The URL to request
+            params: Query parameters
+            timeout: Request timeout in seconds
+            headers: Optional HTTP headers
+
+        Returns:
+            httpx.Response on success
+
+        Raises:
+            WeatherServiceError on failure after retries
+        """
+        last_exception: Optional[Exception] = None
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                with httpx.Client(timeout=timeout) as client:
+                    response = client.get(url, params=params, headers=headers)
+
+                    if response.status_code == 429:
+                        if attempt < self.max_retries:
+                            # Check for Retry-After header
+                            retry_after = response.headers.get('Retry-After')
+                            if retry_after:
+                                try:
+                                    delay = min(float(retry_after), self.max_delay)
+                                except ValueError:
+                                    delay = self._calculate_backoff_delay(attempt)
+                            else:
+                                delay = self._calculate_backoff_delay(attempt)
+
+                            logger.warning(
+                                f"Rate limited (429) on {url}, attempt {attempt + 1}/{self.max_retries + 1}, "
+                                f"retrying in {delay:.1f}s"
+                            )
+                            time.sleep(delay)
+                            continue
+
+                        raise WeatherServiceError("API rate limit exceeded after retries")
+
+                    return response
+
+            except httpx.TimeoutException as e:
+                last_exception = e
+                if attempt < self.max_retries:
+                    delay = self._calculate_backoff_delay(attempt)
+                    logger.warning(
+                        f"Request timeout on {url}, attempt {attempt + 1}/{self.max_retries + 1}, "
+                        f"retrying in {delay:.1f}s"
+                    )
+                    time.sleep(delay)
+                    continue
+
+            except httpx.RequestError as e:
+                last_exception = e
+                if attempt < self.max_retries:
+                    delay = self._calculate_backoff_delay(attempt)
+                    logger.warning(
+                        f"Request error on {url}: {e}, attempt {attempt + 1}/{self.max_retries + 1}, "
+                        f"retrying in {delay:.1f}s"
+                    )
+                    time.sleep(delay)
+                    continue
+
+        # All retries exhausted
+        if isinstance(last_exception, httpx.TimeoutException):
+            raise WeatherServiceError("API request timed out after retries")
+        raise WeatherServiceError(f"API request failed after retries: {last_exception}")
+
+    def _calculate_backoff_delay(self, attempt: int) -> float:
+        """
+        Calculate exponential backoff delay with jitter.
+
+        Uses exponential backoff: base * 2^attempt
+        Adds random jitter (0 to base) to prevent thundering herd.
+
+        Args:
+            attempt: Current attempt number (0-indexed)
+
+        Returns:
+            Delay in seconds, capped at max_delay
+        """
+        base = self.base_delay * (2 ** attempt)
+        jitter = random.uniform(0, self.base_delay)
+        return min(base + jitter, self.max_delay)
+
+    def _get_from_db(
+        self,
+        weather_type: str,
+        target_date: date,
+        station: Optional[str] = None,
+        lat: Optional[float] = None,
+        lon: Optional[float] = None,
+        max_age_seconds: Optional[int] = None,
+    ) -> Optional[dict]:
+        """
+        Retrieve weather data from database.
+
+        Args:
+            weather_type: Type of weather data (metar, taf, nws, openmeteo, hourly, historical)
+            target_date: The date the weather is for
+            station: Station identifier (for METAR/TAF)
+            lat: Latitude (for NWS/OpenMeteo)
+            lon: Longitude (for NWS/OpenMeteo)
+            max_age_seconds: Maximum age of data to return (None = any age)
+
+        Returns:
+            Stored data dict if found, None otherwise
+        """
+        from apps.hamsalert.models import WeatherRecord
+
+        query = WeatherRecord.objects.filter(
+            weather_type=weather_type,
+            target_date=target_date,
+        )
+
+        if station:
+            query = query.filter(station=station)
+        elif lat is not None and lon is not None:
+            # Use approximate matching for coordinates (within ~11m precision)
+            query = query.filter(
+                latitude__range=(Decimal(str(lat)) - Decimal('0.0001'), Decimal(str(lat)) + Decimal('0.0001')),
+                longitude__range=(Decimal(str(lon)) - Decimal('0.0001'), Decimal(str(lon)) + Decimal('0.0001')),
+            )
+
+        if max_age_seconds is not None:
+            cutoff = timezone.now() - timezone.timedelta(seconds=max_age_seconds)
+            query = query.filter(fetched_at__gte=cutoff)
+
+        record = query.order_by('-fetched_at').first()
+        if record:
+            logger.debug(f"DB hit for {weather_type} on {target_date}")
+            return record.data
+        return None
+
+    def _save_to_db(
+        self,
+        weather_type: str,
+        target_date: date,
+        data: dict,
+        station: Optional[str] = None,
+        lat: Optional[float] = None,
+        lon: Optional[float] = None,
+        api_response_time_ms: Optional[int] = None,
+    ) -> None:
+        """
+        Save weather data to database.
+
+        Args:
+            weather_type: Type of weather data
+            target_date: The date the weather is for
+            data: Weather data dict to store
+            station: Station identifier (for METAR/TAF)
+            lat: Latitude (for NWS/OpenMeteo)
+            lon: Longitude (for NWS/OpenMeteo)
+            api_response_time_ms: API response time in milliseconds
+        """
+        from apps.hamsalert.models import WeatherRecord
+
+        try:
+            WeatherRecord.objects.create(
+                weather_type=weather_type,
+                target_date=target_date,
+                station=station or '',
+                latitude=Decimal(str(lat)) if lat is not None else None,
+                longitude=Decimal(str(lon)) if lon is not None else None,
+                data=data,
+                api_response_time_ms=api_response_time_ms,
+            )
+            logger.debug(f"Saved {weather_type} to DB for {target_date}")
+        except Exception as e:
+            logger.warning(f"Failed to save weather to DB: {e}")
+
+    def _serialize_openmeteo_data(self, data: OpenMeteoForecastData) -> dict:
+        """Serialize OpenMeteoForecastData to dict for DB storage."""
+        return {
+            'location': list(data.location),
+            'target_date': data.target_date.isoformat(),
+            'wind': {
+                'direction': data.wind.direction,
+                'speed': data.wind.speed,
+                'gust': data.wind.gust,
+                'direction_repr': data.wind.direction_repr,
+            },
+            'temperature_high': data.temperature_high,
+            'temperature_low': data.temperature_low,
+            'precipitation_probability': data.precipitation_probability,
+        }
+
+    def _deserialize_openmeteo_data(self, data: dict) -> OpenMeteoForecastData:
+        """Deserialize dict to OpenMeteoForecastData."""
+        wind_data = data['wind']
+        return OpenMeteoForecastData(
+            location=tuple(data['location']),
+            target_date=date.fromisoformat(data['target_date']),
+            wind=WindData(
+                direction=wind_data['direction'],
+                speed=wind_data['speed'],
+                gust=wind_data['gust'],
+                direction_repr=wind_data['direction_repr'],
+            ),
+            temperature_high=data.get('temperature_high'),
+            temperature_low=data.get('temperature_low'),
+            precipitation_probability=data.get('precipitation_probability'),
+            cached_at=timezone.now(),
+            from_cache=True,
+            source=WeatherSource.OPENMETEO,
+        )
+
+    def _serialize_hourly_data(self, data: HourlyForecastData) -> dict:
+        """Serialize HourlyForecastData to dict for DB storage."""
+        return {
+            'location': list(data.location),
+            'target_date': data.target_date.isoformat(),
+            'hours': [
+                {
+                    'time': h.time.isoformat(),
+                    'temperature_c': h.temperature_c,
+                    'wind_speed_kmh': h.wind_speed_kmh,
+                    'wind_direction': h.wind_direction,
+                    'wind_gusts_kmh': h.wind_gusts_kmh,
+                    'precipitation_probability': h.precipitation_probability,
+                    'weather_code': h.weather_code,
+                }
+                for h in data.hours
+            ],
+        }
+
+    def _deserialize_hourly_data(self, data: dict) -> HourlyForecastData:
+        """Deserialize dict to HourlyForecastData."""
+        hours = []
+        for h in data.get('hours', []):
+            hours.append(HourlyForecastEntry(
+                time=datetime.fromisoformat(h['time']),
+                temperature_c=h.get('temperature_c'),
+                wind_speed_kmh=h.get('wind_speed_kmh'),
+                wind_direction=h.get('wind_direction'),
+                wind_gusts_kmh=h.get('wind_gusts_kmh'),
+                precipitation_probability=h.get('precipitation_probability'),
+                weather_code=h.get('weather_code'),
+            ))
+
+        return HourlyForecastData(
+            location=tuple(data['location']),
+            target_date=date.fromisoformat(data['target_date']),
+            hours=hours,
+            cached_at=timezone.now(),
+            from_cache=True,
+        )
+
+    def _serialize_historical_data(self, data: HistoricalWeatherData) -> dict:
+        """Serialize HistoricalWeatherData to dict for DB storage."""
+        return {
+            'location': list(data.location),
+            'target_date': data.target_date.isoformat(),
+            'wind': {
+                'direction': data.wind.direction,
+                'speed': data.wind.speed,
+                'gust': data.wind.gust,
+                'direction_repr': data.wind.direction_repr,
+            },
+            'temperature_high': data.temperature_high,
+            'temperature_low': data.temperature_low,
+            'precipitation_sum': data.precipitation_sum,
+        }
+
+    def _deserialize_historical_data(self, data: dict) -> HistoricalWeatherData:
+        """Deserialize dict to HistoricalWeatherData."""
+        wind_data = data['wind']
+        return HistoricalWeatherData(
+            location=tuple(data['location']),
+            target_date=date.fromisoformat(data['target_date']),
+            wind=WindData(
+                direction=wind_data['direction'],
+                speed=wind_data['speed'],
+                gust=wind_data['gust'],
+                direction_repr=wind_data['direction_repr'],
+            ),
+            temperature_high=data.get('temperature_high'),
+            temperature_low=data.get('temperature_low'),
+            precipitation_sum=data.get('precipitation_sum'),
+            cached_at=timezone.now(),
+            from_cache=True,
+            source=WeatherSource.HISTORICAL,
+        )
 
     def _cache_key(self, prefix: str, identifier: str) -> str:
         return f"{self.CACHE_KEY_PREFIX}{prefix}_{identifier}"
@@ -1531,29 +1840,50 @@ class WeatherService:
             raise WeatherServiceError(f"Failed to parse NWS data: {e}")
 
     def _get_openmeteo_forecast(self, target_date: date) -> Optional[OpenMeteoForecastData]:
-        """Get Open-Meteo extended forecast for a target date."""
+        """Get Open-Meteo extended forecast for a target date with two-tier storage."""
         lat, lon = self.nws_location  # Reuse same location
         cache_key = self._cache_key('openmeteo', f"{lat}_{lon}_{target_date.isoformat()}")
+        ttl = self.openmeteo_cache_ttl
 
-        # Try cache first
+        # 1. Check in-memory cache (fast path)
         cached_data = cache.get(cache_key)
         if cached_data is not None:
             cached_data.from_cache = True
             logger.debug(f"Open-Meteo cache hit for {lat},{lon}")
             return cached_data
 
-        # Fetch from API
+        # 2. Check DB (if fresh enough)
+        db_data = self._get_from_db('openmeteo', target_date, lat=lat, lon=lon, max_age_seconds=ttl)
+        if db_data:
+            data = self._deserialize_openmeteo_data(db_data)
+            cache.set(cache_key, data, ttl)
+            return data
+
+        # 3. Fetch from API
         logger.info(f"Fetching Open-Meteo forecast for {lat},{lon}")
         try:
+            start_time = time.time()
             data = self._fetch_openmeteo_forecast(target_date)
+            response_time_ms = int((time.time() - start_time) * 1000)
+
             if data:
-                cache.set(cache_key, data, self.openmeteo_cache_ttl)
+                cache.set(cache_key, data, ttl)
+                self._save_to_db(
+                    'openmeteo', target_date, self._serialize_openmeteo_data(data),
+                    lat=lat, lon=lon, api_response_time_ms=response_time_ms
+                )
             return data
+
         except WeatherServiceError:
+            # 4. Fallback to stale DB data
+            stale_data = self._get_from_db('openmeteo', target_date, lat=lat, lon=lon, max_age_seconds=None)
+            if stale_data:
+                logger.warning(f"Using stale DB data for Open-Meteo {lat},{lon} on {target_date}")
+                return self._deserialize_openmeteo_data(stale_data)
             raise
 
     def _fetch_openmeteo_forecast(self, target_date: date) -> Optional[OpenMeteoForecastData]:
-        """Fetch forecast from Open-Meteo API."""
+        """Fetch forecast from Open-Meteo API with retry on rate limit."""
         lat, lon = self.nws_location
 
         params = {
@@ -1571,23 +1901,16 @@ class WeatherService:
             'forecast_days': 16,
         }
 
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                response = client.get(
-                    'https://api.open-meteo.com/v1/forecast',
-                    params=params
-                )
+        response = self._make_request_with_retry(
+            'https://api.open-meteo.com/v1/forecast',
+            params=params,
+        )
 
-                if response.status_code != 200:
-                    logger.warning(f"Open-Meteo API error: {response.status_code}")
-                    raise WeatherServiceError(f"Open-Meteo API error: {response.status_code}")
+        if response.status_code != 200:
+            logger.warning(f"Open-Meteo API error: {response.status_code}")
+            raise WeatherServiceError(f"Open-Meteo API error: {response.status_code}")
 
-                return self._parse_openmeteo_response(response.json(), target_date)
-
-        except httpx.TimeoutException:
-            raise WeatherServiceError("Open-Meteo API request timed out")
-        except httpx.RequestError as e:
-            raise WeatherServiceError(f"Open-Meteo API request failed: {e}")
+        return self._parse_openmeteo_response(response.json(), target_date)
 
     def _parse_openmeteo_response(self, data: dict, target_date: date) -> Optional[OpenMeteoForecastData]:
         """Parse Open-Meteo API response."""
@@ -1637,29 +1960,50 @@ class WeatherService:
             raise WeatherServiceError(f"Failed to parse Open-Meteo data: {e}")
 
     def get_hourly_forecast(self, target_date: date) -> Optional['HourlyForecastData']:
-        """Get hourly forecast data for a target date (0-15 days out)."""
+        """Get hourly forecast data for a target date (0-15 days out) with two-tier storage."""
         lat, lon = self.nws_location
         cache_key = self._cache_key('hourly', f"{lat}_{lon}_{target_date.isoformat()}")
+        ttl = self.openmeteo_cache_ttl
 
-        # Try cache first
+        # 1. Check in-memory cache (fast path)
         cached_data = cache.get(cache_key)
         if cached_data is not None:
             cached_data.from_cache = True
             logger.debug(f"Hourly cache hit for {lat},{lon} on {target_date}")
             return cached_data
 
-        # Fetch from API
+        # 2. Check DB (if fresh enough)
+        db_data = self._get_from_db('hourly', target_date, lat=lat, lon=lon, max_age_seconds=ttl)
+        if db_data:
+            data = self._deserialize_hourly_data(db_data)
+            cache.set(cache_key, data, ttl)
+            return data
+
+        # 3. Fetch from API
         logger.info(f"Fetching hourly forecast for {lat},{lon} on {target_date}")
         try:
+            start_time = time.time()
             data = self._fetch_hourly_forecast(target_date)
+            response_time_ms = int((time.time() - start_time) * 1000)
+
             if data:
-                cache.set(cache_key, data, self.openmeteo_cache_ttl)
+                cache.set(cache_key, data, ttl)
+                self._save_to_db(
+                    'hourly', target_date, self._serialize_hourly_data(data),
+                    lat=lat, lon=lon, api_response_time_ms=response_time_ms
+                )
             return data
+
         except WeatherServiceError:
+            # 4. Fallback to stale DB data
+            stale_data = self._get_from_db('hourly', target_date, lat=lat, lon=lon, max_age_seconds=None)
+            if stale_data:
+                logger.warning(f"Using stale DB data for hourly {lat},{lon} on {target_date}")
+                return self._deserialize_hourly_data(stale_data)
             raise
 
     def _fetch_hourly_forecast(self, target_date: date) -> Optional['HourlyForecastData']:
-        """Fetch hourly forecast from Open-Meteo API."""
+        """Fetch hourly forecast from Open-Meteo API with retry on rate limit."""
         lat, lon = self.nws_location
         date_str = target_date.isoformat()
 
@@ -1679,23 +2023,16 @@ class WeatherService:
             'end_date': date_str,
         }
 
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                response = client.get(
-                    'https://api.open-meteo.com/v1/forecast',
-                    params=params,
-                )
+        response = self._make_request_with_retry(
+            'https://api.open-meteo.com/v1/forecast',
+            params=params,
+        )
 
-                if response.status_code != 200:
-                    logger.warning(f"Open-Meteo hourly API error: {response.status_code}")
-                    raise WeatherServiceError(f"Open-Meteo API error: {response.status_code}")
+        if response.status_code != 200:
+            logger.warning(f"Open-Meteo hourly API error: {response.status_code}")
+            raise WeatherServiceError(f"Open-Meteo API error: {response.status_code}")
 
-                return self._parse_hourly_response(response.json(), target_date)
-
-        except httpx.TimeoutException:
-            raise WeatherServiceError("Open-Meteo hourly API request timed out")
-        except httpx.RequestError as e:
-            raise WeatherServiceError(f"Open-Meteo hourly API request failed: {e}")
+        return self._parse_hourly_response(response.json(), target_date)
 
     def _parse_hourly_response(self, data: dict, target_date: date) -> Optional['HourlyForecastData']:
         """Parse Open-Meteo hourly API response."""
@@ -1742,29 +2079,50 @@ class WeatherService:
             raise WeatherServiceError(f"Failed to parse hourly data: {e}")
 
     def _get_historical_weather(self, target_date: date) -> Optional[HistoricalWeatherData]:
-        """Get historical weather data for a past date."""
+        """Get historical weather data for a past date with two-tier storage."""
         lat, lon = self.nws_location
         cache_key = self._cache_key('historical', f"{lat}_{lon}_{target_date.isoformat()}")
+        ttl = self.historical_cache_ttl
 
-        # Try cache first
+        # 1. Check in-memory cache (fast path)
         cached_data = cache.get(cache_key)
         if cached_data is not None:
             cached_data.from_cache = True
             logger.debug(f"Historical cache hit for {lat},{lon} on {target_date}")
             return cached_data
 
-        # Fetch from API
+        # 2. Check DB (if fresh enough)
+        db_data = self._get_from_db('historical', target_date, lat=lat, lon=lon, max_age_seconds=ttl)
+        if db_data:
+            data = self._deserialize_historical_data(db_data)
+            cache.set(cache_key, data, ttl)
+            return data
+
+        # 3. Fetch from API
         logger.info(f"Fetching historical weather for {lat},{lon} on {target_date}")
         try:
+            start_time = time.time()
             data = self._fetch_historical_weather(target_date)
+            response_time_ms = int((time.time() - start_time) * 1000)
+
             if data:
-                cache.set(cache_key, data, self.historical_cache_ttl)
+                cache.set(cache_key, data, ttl)
+                self._save_to_db(
+                    'historical', target_date, self._serialize_historical_data(data),
+                    lat=lat, lon=lon, api_response_time_ms=response_time_ms
+                )
             return data
+
         except WeatherServiceError:
+            # 4. Fallback to stale DB data
+            stale_data = self._get_from_db('historical', target_date, lat=lat, lon=lon, max_age_seconds=None)
+            if stale_data:
+                logger.warning(f"Using stale DB data for historical {lat},{lon} on {target_date}")
+                return self._deserialize_historical_data(stale_data)
             raise
 
     def _fetch_historical_weather(self, target_date: date) -> Optional[HistoricalWeatherData]:
-        """Fetch historical weather from Open-Meteo Archive API."""
+        """Fetch historical weather from Open-Meteo Archive API with retry on rate limit."""
         lat, lon = self.nws_location
 
         params = {
@@ -1783,23 +2141,16 @@ class WeatherService:
             'timezone': 'auto',
         }
 
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                response = client.get(
-                    'https://archive-api.open-meteo.com/v1/archive',
-                    params=params
-                )
+        response = self._make_request_with_retry(
+            'https://archive-api.open-meteo.com/v1/archive',
+            params=params,
+        )
 
-                if response.status_code != 200:
-                    logger.warning(f"Open-Meteo Archive API error: {response.status_code}")
-                    raise WeatherServiceError(f"Open-Meteo Archive API error: {response.status_code}")
+        if response.status_code != 200:
+            logger.warning(f"Open-Meteo Archive API error: {response.status_code}")
+            raise WeatherServiceError(f"Open-Meteo Archive API error: {response.status_code}")
 
-                return self._parse_historical_response(response.json(), target_date)
-
-        except httpx.TimeoutException:
-            raise WeatherServiceError("Open-Meteo Archive API request timed out")
-        except httpx.RequestError as e:
-            raise WeatherServiceError(f"Open-Meteo Archive API request failed: {e}")
+        return self._parse_historical_response(response.json(), target_date)
 
     def _parse_historical_response(self, data: dict, target_date: date) -> Optional[HistoricalWeatherData]:
         """Parse Open-Meteo Archive API response."""

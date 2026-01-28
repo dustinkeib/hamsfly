@@ -151,3 +151,11 @@ WEATHER_METAR_CACHE_TTL = 1800   # 30 min
 WEATHER_TAF_CACHE_TTL = 3600    # 1 hour
 WEATHER_NWS_CACHE_TTL = 7200    # 2 hours
 WEATHER_OPENMETEO_CACHE_TTL = 14400  # 4 hours
+
+# Open-Meteo Rate Limiting
+OPENMETEO_MAX_RETRIES = 3
+OPENMETEO_BASE_DELAY = 1.0  # seconds
+OPENMETEO_MAX_DELAY = 30.0  # seconds
+
+# Weather DB Storage
+WEATHER_DB_CLEANUP_DAYS = 30  # Delete records older than this
