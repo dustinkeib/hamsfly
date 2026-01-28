@@ -10,7 +10,10 @@
             <!-- Month Navigation -->
             <div class="flex items-center justify-between mb-4">
                 <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-ghost btn-sm">&lt; Prev</a>
-                <h2 class="card-title text-2xl">{{ month_name }} {{ year }}</h2>
+                <div class="flex items-center gap-2">
+                    <h2 class="card-title text-2xl"><span class="sm:hidden">{{ month_name|slice:":3" }}</span><span class="hidden sm:inline">{{ month_name }}</span> {{ year }}</h2>
+                    <a href="/" id="today-btn" class="btn btn-success btn-xs"><span class="sm:hidden">Today &gt;</span><span class="hidden sm:inline">Go to Today</span></a>
+                </div>
                 <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-ghost btn-sm">Next &gt;</a>
             </div>
 
@@ -69,6 +72,11 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('today-btn').addEventListener('click', function() {
+            const now = new Date();
+            localStorage.setItem('selectedDate',
+                `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`);
+        });
         const now = new Date();
         const todayYear = now.getFullYear();
         const todayMonth = now.getMonth() + 1;
