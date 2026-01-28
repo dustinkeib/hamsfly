@@ -159,3 +159,6 @@ OPENMETEO_MAX_DELAY = 30.0  # seconds
 
 # Weather DB Storage
 WEATHER_DB_CLEANUP_DAYS = 30  # Delete records older than this
+
+# Scheduler Settings
+SCHEDULER_CLEANUP_HOUR = 3  # Run cleanup at 3am local time
