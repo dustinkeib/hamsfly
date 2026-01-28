@@ -213,12 +213,15 @@ def hourly_forecast(request, year, month, day):
         error = str(e)
 
     is_today = target_date == local_today
-    now_hour = str(datetime.now(local_tz).hour) if is_today else ""
+    now = datetime.now(local_tz) if is_today else None
+    now_hour = str(now.hour) if now else ""
+    now_time = now.strftime("%H:%M") if now else ""
 
     context = {
         'target_date': target_date,
         'hourly': hourly_data,
         'error': error,
         'now_hour': now_hour,
+        'now_time': now_time,
     }
     return render(request, 'hamsalert/hourly_forecast.html', context)

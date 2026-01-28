@@ -35,13 +35,19 @@
                     <span class="text-right">Rain</span>
                 </div>
                 {% for hour in hourly.hours %}
-                <div class="grid grid-cols-[1fr_1fr_1fr_2fr_1fr] gap-x-1 items-center py-1.5 {% if forloop.counter|divisibleby:2 %}bg-base-200/50{% endif %} {% if now_hour and hour.time|date:"G" == now_hour %}![border-top:2px_solid_oklch(var(--p))]{% endif %}">
-                    <span class="font-medium">{{ hour.time|time:"g A" }}</span>
+                <div class="grid grid-cols-[1fr_1fr_1fr_2fr_1fr] gap-x-1 items-center py-1.5 {% if forloop.counter|divisibleby:2 %}bg-base-200/50{% endif %}">
+                    <span class="font-medium">{{ hour.time|time:"H:i" }}</span>
                     <span class="truncate text-base-content/70 text-center">{{ hour.weather_description }}</span>
                     <span class="text-right">{% if hour.temperature_f is not None %}{{ hour.temperature_f }}°{% else %}--{% endif %}</span>
                     <span class="pl-6 whitespace-nowrap text-center">{{ hour.wind_arrow }} {{ hour.direction_compass }} {{ hour.wind_speed_kt }}<span class="text-xs">kt</span>{% if hour.wind_gusts_kt is not None %}<span class="text-base-content/50">g{{ hour.wind_gusts_kt }}</span>{% endif %}</span>
                     <span class="text-right">{% if hour.precipitation_probability is not None %}{{ hour.precipitation_probability }}%{% else %}--{% endif %}</span>
                 </div>
+                {% if now_hour and hour.time|date:"G" == now_hour %}
+                <div class="grid grid-cols-[1fr_4fr] gap-x-1 items-center py-1.5">
+                    <span class="font-bold text-primary">{{ now_time }}</span>
+                    <span class="flex items-center gap-3"><span class="flex-1 h-px bg-base-content/15"></span><span class="text-[0.65rem] text-primary font-bold tracking-[0.2em] uppercase">Current Time</span><span class="flex-1 h-px bg-base-content/15"></span></span>
+                </div>
+                {% endif %}
                 {% endfor %}
             </div>
 
