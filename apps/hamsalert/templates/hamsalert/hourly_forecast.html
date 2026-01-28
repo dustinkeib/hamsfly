@@ -26,20 +26,20 @@
         <div class="card-body p-4">
             <h2 class="card-title text-lg">Hourly Forecast - {{ target_date|date:"l, M j, Y" }}</h2>
 
-            <div class="divide-y divide-base-300 text-sm">
+            <div class="divide-y divide-base-300 text-sm max-w-lg mx-auto">
                 <div class="grid grid-cols-[1fr_1fr_1fr_2fr_1fr] gap-x-1 py-1 text-xs text-base-content/50 font-semibold">
                     <span>Time</span>
-                    <span>Conditions</span>
+                    <span class="text-center">Conditions</span>
                     <span class="text-right">Temp</span>
-                    <span class="pl-6">Wind</span>
+                    <span class="text-center pl-6">Wind</span>
                     <span class="text-right">Rain</span>
                 </div>
                 {% for hour in hourly.hours %}
                 <div class="grid grid-cols-[1fr_1fr_1fr_2fr_1fr] gap-x-1 items-center py-1.5 {% if forloop.counter|divisibleby:2 %}bg-base-200/50{% endif %}">
                     <span class="font-medium">{{ hour.time|time:"g A" }}</span>
-                    <span class="truncate text-base-content/70">{{ hour.weather_description }}</span>
+                    <span class="truncate text-base-content/70 text-center">{{ hour.weather_description }}</span>
                     <span class="text-right">{% if hour.temperature_f is not None %}{{ hour.temperature_f }}°{% else %}--{% endif %}</span>
-                    <span class="pl-6 whitespace-nowrap">{{ hour.wind_arrow }} {{ hour.direction_compass }} {{ hour.wind_speed_kt }}<span class="text-xs">kt</span>{% if hour.wind_gusts_kt is not None %}<span class="text-base-content/50">g{{ hour.wind_gusts_kt }}</span>{% endif %}</span>
+                    <span class="pl-6 whitespace-nowrap text-center">{{ hour.wind_arrow }} {{ hour.direction_compass }} {{ hour.wind_speed_kt }}<span class="text-xs">kt</span>{% if hour.wind_gusts_kt is not None %}<span class="text-base-content/50">g{{ hour.wind_gusts_kt }}</span>{% endif %}</span>
                     <span class="text-right">{% if hour.precipitation_probability is not None %}{{ hour.precipitation_probability }}%{% else %}--{% endif %}</span>
                 </div>
                 {% endfor %}
