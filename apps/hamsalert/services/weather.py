@@ -161,9 +161,6 @@ def calculate_rc_assessment(
                 rating = 'marginal'
             reasons.append(f"Rain possible: {precipitation_probability}%")
 
-    if not reasons:
-        reasons.append("Good flying conditions")
-
     return {'rating': rating, 'reasons': reasons}
 
 

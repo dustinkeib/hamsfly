@@ -49,24 +49,23 @@
                     </button>
                 </div>
 
-                <!-- R/C Flying Assessment (hide for historical) -->
+                <!-- Flight Conditions Assessment (hide for historical) -->
                 {% if not weather.historical %}
-                <div class="mb-3">
-                    <span class="badge badge-{{ weather.rc_rating_color }} badge-md">
-                        {% with assessment=weather.rc_flying_assessment %}
-                            {% if assessment.rating == 'good' %}Good for R/C
-                            {% elif assessment.rating == 'marginal' %}Marginal
-                            {% elif assessment.rating == 'poor' %}Poor Conditions
-                            {% else %}No Fly
-                            {% endif %}
-                        {% endwith %}
-                    </span>
-                    <span class="text-xs text-base-content/70 ml-2">
-                        {% for reason in weather.rc_flying_assessment.reasons %}
-                            {{ reason }}{% if not forloop.last %} · {% endif %}
-                        {% endfor %}
-                    </span>
+                {% with assessment=weather.rc_flying_assessment %}
+                <div class="mb-3 w-full rounded-lg px-3 py-1.5 text-center font-semibold
+                    {% if assessment.rating == 'good' %}bg-success text-success-content
+                    {% elif assessment.rating == 'marginal' %}bg-warning text-warning-content
+                    {% elif assessment.rating == 'poor' %}bg-error text-error-content
+                    {% else %}bg-neutral text-neutral-content
+                    {% endif %}">
+                    {% if assessment.rating == 'good' %}Good Flight Conditions
+                    {% elif assessment.rating == 'marginal' %}Marginal Conditions
+                    {% elif assessment.rating == 'poor' %}Poor Conditions
+                    {% else %}No Fly
+                    {% endif %}
+                    {% if assessment.reasons %}<span class="font-normal opacity-80 text-sm"> · {% for reason in assessment.reasons %}{{ reason }}{% if not forloop.last %} · {% endif %}{% endfor %}</span>{% endif %}
                 </div>
+                {% endwith %}
                 {% endif %}
 
                 <!-- Short Forecast (from NWS if available) -->
