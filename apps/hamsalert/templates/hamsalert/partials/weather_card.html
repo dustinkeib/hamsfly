@@ -29,32 +29,8 @@
                 {% endwith %}
                 {% endif %}
 
-                <!-- Header with source badges -->
-                <div class="flex items-center justify-between mb-2">
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <h4 class="font-semibold text-sm">
-                            {% if weather.station %}Weather: {{ weather.station }}{% else %}{{ weather.target_date|date:"l" }} Forecast{% endif %}
-                        </h4>
-                        {% if weather.flight_rules %}
-                        <span class="badge badge-{{ weather.flight_rules_color }} badge-sm">{{ weather.flight_rules }}</span>
-                        {% endif %}
-                        {# Source badges #}
-                        {% if weather.metar %}
-                        <span class="badge badge-primary badge-sm badge-outline">METAR</span>
-                        {% endif %}
-                        {% if weather.taf %}
-                        <span class="badge badge-secondary badge-sm badge-outline">TAF</span>
-                        {% endif %}
-                        {% if weather.nws %}
-                        <span class="badge badge-accent badge-sm badge-outline">NWS</span>
-                        {% endif %}
-                        {% if weather.openmeteo %}
-                        <span class="badge badge-info badge-sm badge-outline">Extended</span>
-                        {% endif %}
-                        {% if weather.historical %}
-                        <span class="badge badge-neutral badge-sm badge-outline">Historical</span>
-                        {% endif %}
-                    </div>
+                <!-- Header -->
+                <div class="flex items-center justify-end mb-2">
                     <button
                         class="btn btn-ghost btn-xs"
                         hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
@@ -134,6 +110,29 @@
                         {% endif %}
                         <div class="text-xs text-base-content/60">Visibility</div>
                     </div>
+                </div>
+
+                <!-- Sources -->
+                <div class="flex items-center justify-center gap-2 flex-wrap mt-3 text-xs text-base-content/60">
+                    <span>Sources:</span>
+                    {% if weather.flight_rules %}
+                    <span class="badge badge-{{ weather.flight_rules_color }} badge-xs">{{ weather.flight_rules }}</span>
+                    {% endif %}
+                    {% if weather.metar %}
+                    <span class="badge badge-primary badge-xs badge-outline">METAR:{{ weather.station }}</span>
+                    {% endif %}
+                    {% if weather.taf %}
+                    <span class="badge badge-secondary badge-xs badge-outline">TAF</span>
+                    {% endif %}
+                    {% if weather.nws %}
+                    <span class="badge badge-accent badge-xs badge-outline">NWS</span>
+                    {% endif %}
+                    {% if weather.openmeteo %}
+                    <span class="badge badge-info badge-xs badge-outline">Extended</span>
+                    {% endif %}
+                    {% if weather.historical %}
+                    <span class="badge badge-neutral badge-xs badge-outline">Historical</span>
+                    {% endif %}
                 </div>
 
                 <!-- Cache/Time Info -->
