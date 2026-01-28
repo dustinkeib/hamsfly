@@ -152,11 +152,11 @@ def calculate_rc_assessment(
 
     # Precipitation probability (for forecasts)
     if precipitation_probability is not None:
-        if precipitation_probability >= 70:
+        if precipitation_probability >= 25:
             if rating in ('good', 'marginal'):
                 rating = 'poor'
             reasons.append(f"High rain chance: {precipitation_probability}%")
-        elif precipitation_probability >= 50:
+        elif precipitation_probability >= 10:
             if rating == 'good':
                 rating = 'marginal'
             reasons.append(f"Rain possible: {precipitation_probability}%")
