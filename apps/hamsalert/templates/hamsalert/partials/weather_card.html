@@ -29,21 +29,6 @@
                 {% endwith %}
                 {% endif %}
 
-                <!-- Header -->
-                <div class="flex items-center justify-end mb-2">
-                    <button
-                        class="btn btn-ghost btn-xs"
-                        hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
-                        hx-target="#weather-container"
-                        hx-swap="innerHTML"
-                        title="Refresh weather"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                    </button>
-                </div>
-
                 <!-- Short Forecast (from NWS if available) -->
                 {% if weather.short_forecast %}
                 <div class="text-sm font-medium mb-3">{{ weather.short_forecast }}</div>
@@ -136,9 +121,20 @@
                 </div>
 
                 <!-- Cache/Time Info -->
-                <div class="text-xs text-base-content/50 mt-2 text-center">
-                    Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}
-                    {% if refresh_seconds %} · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span>{% endif %}
+                <div class="flex items-center justify-center gap-1 text-xs text-base-content/50 mt-2">
+                    <span>Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}</span>
+                    {% if refresh_seconds %}<span> · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span></span>{% endif %}
+                    <button
+                        class="btn btn-ghost btn-xs ml-1"
+                        hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
+                        hx-target="#weather-container"
+                        hx-swap="innerHTML"
+                        title="Refresh weather"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
                 </div>
             </div>
         </div>
