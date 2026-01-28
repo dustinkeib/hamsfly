@@ -187,6 +187,38 @@ def wind_arrow(direction: Optional[int]) -> str:
     return arrows[index]
 
 
+WMO_WEATHER_CODES = {
+    0: 'Clear sky',
+    1: 'Mainly clear',
+    2: 'Partly cloudy',
+    3: 'Overcast',
+    45: 'Fog',
+    48: 'Rime fog',
+    51: 'Light drizzle',
+    53: 'Moderate drizzle',
+    55: 'Dense drizzle',
+    56: 'Light freezing drizzle',
+    57: 'Dense freezing drizzle',
+    61: 'Slight rain',
+    63: 'Moderate rain',
+    65: 'Heavy rain',
+    66: 'Light freezing rain',
+    67: 'Heavy freezing rain',
+    71: 'Slight snow',
+    73: 'Moderate snow',
+    75: 'Heavy snow',
+    77: 'Snow grains',
+    80: 'Slight showers',
+    81: 'Moderate showers',
+    82: 'Violent showers',
+    85: 'Slight snow showers',
+    86: 'Heavy snow showers',
+    95: 'Thunderstorm',
+    96: 'Thunderstorm w/ slight hail',
+    99: 'Thunderstorm w/ heavy hail',
+}
+
+
 @dataclass
 class WeatherData:
     """Parsed METAR data relevant to R/C flying."""
@@ -428,6 +460,65 @@ class OpenMeteoForecastData:
     @property
     def source_label(self) -> str:
         return 'Extended'
+
+
+@dataclass
+class HourlyForecastEntry:
+    """Single hour of Open-Meteo hourly forecast data."""
+    time: datetime
+    temperature_c: Optional[float] = None
+    wind_speed_kmh: Optional[float] = None
+    wind_direction: Optional[int] = None
+    wind_gusts_kmh: Optional[float] = None
+    precipitation_probability: Optional[int] = None
+    weather_code: Optional[int] = None
+
+    @property
+    def temperature_f(self) -> Optional[int]:
+        if self.temperature_c is None:
+            return None
+        return round(self.temperature_c * 9 / 5 + 32)
+
+    @property
+    def wind_speed_kt(self) -> int:
+        if self.wind_speed_kmh is None:
+            return 0
+        return round(self.wind_speed_kmh * 0.54)
+
+    @property
+    def wind_gusts_kt(self) -> Optional[int]:
+        if self.wind_gusts_kmh is None:
+            return None
+        return round(self.wind_gusts_kmh * 0.54)
+
+    @property
+    def direction_compass(self) -> str:
+        if self.wind_direction is None:
+            return 'VRB'
+        directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+                      'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+        index = round(self.wind_direction / 22.5) % 16
+        return directions[index]
+
+    @property
+    def wind_arrow(self) -> str:
+        return wind_arrow(self.wind_direction)
+
+    @property
+    def weather_description(self) -> str:
+        if self.weather_code is None:
+            return '--'
+        return WMO_WEATHER_CODES.get(self.weather_code, f'Code {self.weather_code}')
+
+
+@dataclass
+class HourlyForecastData:
+    """Hourly forecast data from Open-Meteo for a single day."""
+    location: tuple[float, float]
+    target_date: date
+    hours: list[HourlyForecastEntry] = field(default_factory=list)
+    cached_at: datetime = field(default_factory=timezone.now)
+    from_cache: bool = False
 
 
 @dataclass
@@ -1544,6 +1635,111 @@ class WeatherService:
         except (KeyError, TypeError, IndexError) as e:
             logger.error(f"Failed to parse Open-Meteo response: {e}")
             raise WeatherServiceError(f"Failed to parse Open-Meteo data: {e}")
+
+    def get_hourly_forecast(self, target_date: date) -> Optional['HourlyForecastData']:
+        """Get hourly forecast data for a target date (0-15 days out)."""
+        lat, lon = self.nws_location
+        cache_key = self._cache_key('hourly', f"{lat}_{lon}_{target_date.isoformat()}")
+
+        # Try cache first
+        cached_data = cache.get(cache_key)
+        if cached_data is not None:
+            cached_data.from_cache = True
+            logger.debug(f"Hourly cache hit for {lat},{lon} on {target_date}")
+            return cached_data
+
+        # Fetch from API
+        logger.info(f"Fetching hourly forecast for {lat},{lon} on {target_date}")
+        try:
+            data = self._fetch_hourly_forecast(target_date)
+            if data:
+                cache.set(cache_key, data, self.openmeteo_cache_ttl)
+            return data
+        except WeatherServiceError:
+            raise
+
+    def _fetch_hourly_forecast(self, target_date: date) -> Optional['HourlyForecastData']:
+        """Fetch hourly forecast from Open-Meteo API."""
+        lat, lon = self.nws_location
+        date_str = target_date.isoformat()
+
+        params = {
+            'latitude': lat,
+            'longitude': lon,
+            'hourly': ','.join([
+                'temperature_2m',
+                'wind_speed_10m',
+                'wind_direction_10m',
+                'wind_gusts_10m',
+                'precipitation_probability',
+                'weather_code',
+            ]),
+            'timezone': 'auto',
+            'start_date': date_str,
+            'end_date': date_str,
+        }
+
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.get(
+                    'https://api.open-meteo.com/v1/forecast',
+                    params=params,
+                )
+
+                if response.status_code != 200:
+                    logger.warning(f"Open-Meteo hourly API error: {response.status_code}")
+                    raise WeatherServiceError(f"Open-Meteo API error: {response.status_code}")
+
+                return self._parse_hourly_response(response.json(), target_date)
+
+        except httpx.TimeoutException:
+            raise WeatherServiceError("Open-Meteo hourly API request timed out")
+        except httpx.RequestError as e:
+            raise WeatherServiceError(f"Open-Meteo hourly API request failed: {e}")
+
+    def _parse_hourly_response(self, data: dict, target_date: date) -> Optional['HourlyForecastData']:
+        """Parse Open-Meteo hourly API response."""
+        try:
+            hourly = data.get('hourly', {})
+            times = hourly.get('time', [])
+
+            if not times:
+                return None
+
+            temps = hourly.get('temperature_2m', [])
+            wind_speeds = hourly.get('wind_speed_10m', [])
+            wind_dirs = hourly.get('wind_direction_10m', [])
+            wind_gusts = hourly.get('wind_gusts_10m', [])
+            precip_probs = hourly.get('precipitation_probability', [])
+            weather_codes = hourly.get('weather_code', [])
+
+            hours = []
+            for i, time_str in enumerate(times):
+                try:
+                    hour_time = datetime.fromisoformat(time_str)
+                except (ValueError, AttributeError):
+                    continue
+
+                hours.append(HourlyForecastEntry(
+                    time=hour_time,
+                    temperature_c=temps[i] if i < len(temps) else None,
+                    wind_speed_kmh=wind_speeds[i] if i < len(wind_speeds) else None,
+                    wind_direction=wind_dirs[i] if i < len(wind_dirs) else None,
+                    wind_gusts_kmh=wind_gusts[i] if i < len(wind_gusts) else None,
+                    precipitation_probability=precip_probs[i] if i < len(precip_probs) else None,
+                    weather_code=weather_codes[i] if i < len(weather_codes) else None,
+                ))
+
+            return HourlyForecastData(
+                location=self.nws_location,
+                target_date=target_date,
+                hours=hours,
+                cached_at=timezone.now(),
+            )
+
+        except (KeyError, TypeError, IndexError) as e:
+            logger.error(f"Failed to parse hourly response: {e}")
+            raise WeatherServiceError(f"Failed to parse hourly data: {e}")
 
     def _get_historical_weather(self, target_date: date) -> Optional[HistoricalWeatherData]:
         """Get historical weather data for a past date."""

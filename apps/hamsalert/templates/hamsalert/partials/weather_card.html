@@ -97,6 +97,14 @@
                     </div>
                 </div>
 
+                <!-- Hourly Forecast Link (hide for historical) -->
+                {% if not weather.historical %}
+                <div class="text-center mt-3">
+                    <a href="{% url 'hourly_forecast' date.year date.month date.day %}"
+                       class="link link-primary text-sm">Hourly Forecast &rarr;</a>
+                </div>
+                {% endif %}
+
                 <!-- Sources -->
                 <div class="flex items-center justify-center gap-2 flex-wrap mt-3 text-xs text-base-content/60">
                     <span>Sources:</span>

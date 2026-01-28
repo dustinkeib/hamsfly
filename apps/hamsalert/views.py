@@ -1,10 +1,12 @@
 import calendar
-from datetime import date
+from datetime import date, datetime
 
+from django.conf import settings as django_settings
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.http import require_GET
+from zoneinfo import ZoneInfo
 
 from .models import Event
 from .services import CompositeWeatherData, WeatherService, WeatherServiceError, WeatherSource
@@ -178,3 +180,41 @@ def weather_refresh(request):
         'refresh_minutes': refresh['minutes'],
     }
     return render(request, 'hamsalert/partials/weather_card.html', context)
+
+
+@require_GET
+def hourly_forecast(request, year, month, day):
+    """Display hourly forecast page for a specific date."""
+    try:
+        target_date = date(year, month, day)
+    except ValueError:
+        return render(request, 'hamsalert/hourly_forecast.html', {
+            'error': 'Invalid date.',
+        })
+
+    weather_service = WeatherService()
+    local_tz = ZoneInfo(getattr(django_settings, 'WEATHER_LOCAL_TIMEZONE', 'America/Los_Angeles'))
+    local_today = datetime.now(local_tz).date()
+    days_out = (target_date - local_today).days
+
+    if days_out < 0 or days_out > 15:
+        return render(request, 'hamsalert/hourly_forecast.html', {
+            'error': 'Hourly forecast is only available for today through 15 days out.',
+            'target_date': target_date,
+        })
+
+    hourly_data = None
+    error = None
+    try:
+        hourly_data = weather_service.get_hourly_forecast(target_date)
+        if not hourly_data or not hourly_data.hours:
+            error = 'No hourly forecast data available for this date.'
+    except WeatherServiceError as e:
+        error = str(e)
+
+    context = {
+        'target_date': target_date,
+        'hourly': hourly_data,
+        'error': error,
+    }
+    return render(request, 'hamsalert/hourly_forecast.html', context)

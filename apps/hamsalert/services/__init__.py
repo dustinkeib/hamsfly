@@ -1,6 +1,8 @@
 from .weather import (
     CompositeWeatherData,
     HistoricalWeatherData,
+    HourlyForecastData,
+    HourlyForecastEntry,
     WeatherService,
     WeatherData,
     WeatherServiceError,
@@ -14,6 +16,8 @@ from .weather import (
 __all__ = [
     'CompositeWeatherData',
     'HistoricalWeatherData',
+    'HourlyForecastData',
+    'HourlyForecastEntry',
     'WeatherService',
     'WeatherData',
     'WeatherServiceError',
