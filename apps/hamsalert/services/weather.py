@@ -809,8 +809,8 @@ class WeatherService:
         - Today: METAR (current conditions)
         - Tomorrow: TAF (aviation forecast)
         - 2-7 days: NWS API
-        - 8-16 days: Open-Meteo
-        - >16 days: Unavailable
+        - 8-15 days: Open-Meteo
+        - >15 days: Unavailable
         """
         local_today = datetime.now(self.local_timezone).date()
         days_out = (target_date - local_today).days
@@ -823,9 +823,9 @@ class WeatherService:
             return self._get_taf(station, target_date)
         if days_out <= 7:
             return self._get_nws_forecast(target_date)
-        if days_out <= 16:
+        if days_out <= 15:
             return self._get_openmeteo_forecast(target_date)
-        return UnavailableWeatherData("Forecast not available beyond 16 days")
+        return UnavailableWeatherData("Forecast not available beyond 15 days")
 
     def get_all_weather_for_date(
         self,
@@ -840,8 +840,8 @@ class WeatherService:
         - Day 0 (today): METAR + TAF + NWS + OpenMeteo
         - Day 1 (tomorrow): TAF + NWS + OpenMeteo
         - Days 2-7: NWS + OpenMeteo
-        - Days 8-16: OpenMeteo only
-        - >16 days: None
+        - Days 8-15: OpenMeteo only
+        - >15 days: None
 
         Uses ThreadPoolExecutor for parallel fetches on cache miss.
         """
@@ -862,14 +862,14 @@ class WeatherService:
                 logger.warning(f"Historical fetch failed: {e}")
                 return CompositeWeatherData(target_date=target_date)
 
-        if days_out > 16:
+        if days_out > 15:
             return CompositeWeatherData(target_date=target_date)
 
         # Determine which sources to fetch
         fetch_metar = days_out == 0
         fetch_taf = days_out <= 1
         fetch_nws = days_out <= 7
-        fetch_openmeteo = days_out <= 16
+        fetch_openmeteo = days_out <= 15
 
         # Prepare fetch tasks
         results = {
@@ -969,7 +969,7 @@ class WeatherService:
             cache.delete(self._cache_key('taf', f"{station}_{target_date.isoformat()}"))
         if days_out <= 7:
             cache.delete(self._cache_key('nws', f"{lat}_{lon}_{target_date.isoformat()}"))
-        if days_out <= 16:
+        if days_out <= 15:
             cache.delete(self._cache_key('openmeteo', f"{lat}_{lon}_{target_date.isoformat()}"))
 
     def get_weather(self, station: Optional[str] = None) -> Optional[WeatherData]:

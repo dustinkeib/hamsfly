@@ -109,10 +109,13 @@ def day_events(request, year, month, day):
         station = request.GET.get('station')
         try:
             weather = weather_service.get_all_weather_for_date(event_date, station)
-            # If no sources returned data, treat as unavailable
             if not weather.sources:
-                weather_error = "No weather data available for this date"
                 weather = None
+                days_out = (event_date - date.today()).days
+                if days_out > 15:
+                    weather_error = "No forecast beyond 16 days"
+                elif days_out >= 0:
+                    weather_error = "Weather data temporarily unavailable"
         except WeatherServiceError as e:
             weather_error = str(e)
 
@@ -155,10 +158,13 @@ def weather_refresh(request):
         weather_service.clear_all_cache_for_date(target_date, station)
         try:
             weather = weather_service.get_all_weather_for_date(target_date, station)
-            # If no sources returned data, treat as unavailable
             if not weather.sources:
-                weather_error = "No weather data available for this date"
                 weather = None
+                days_out = (target_date - date.today()).days
+                if days_out > 15:
+                    weather_error = "No forecast beyond 16 days"
+                elif days_out >= 0:
+                    weather_error = "Weather data temporarily unavailable"
         except WeatherServiceError as e:
             weather_error = str(e)
 
