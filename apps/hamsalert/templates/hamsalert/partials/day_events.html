@@ -16,11 +16,11 @@
     </div>
 {% else %}
     {% if weather and weather.rc_flying_assessment.rating == 'good' and not weather.historical %}
-        <div class="alert alert-success shadow-lg mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+        <div class="flex items-center justify-center gap-2 rounded-lg bg-success text-success-content px-3 py-1.5 mb-4 font-semibold">
+            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span class="font-bold text-lg">No events! Let's fly!</span>
+            No events! Let's fly!
         </div>
     {% else %}
         <p class="text-base-content/60 mb-4">No events on this day</p>
