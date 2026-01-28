@@ -10,6 +10,25 @@
              hx-swap="innerHTML"
              {% endif %}>
             <div class="card-body p-4">
+                <!-- Flight Conditions Assessment (hide for historical) -->
+                {% if not weather.historical %}
+                {% with assessment=weather.rc_flying_assessment %}
+                <div class="mb-3 w-full rounded-lg px-3 py-1.5 text-center font-semibold
+                    {% if assessment.rating == 'good' %}bg-success text-success-content
+                    {% elif assessment.rating == 'marginal' %}bg-warning text-warning-content
+                    {% elif assessment.rating == 'poor' %}bg-error text-error-content
+                    {% else %}bg-neutral text-neutral-content
+                    {% endif %}">
+                    {% if assessment.rating == 'good' %}Good Flight Conditions
+                    {% elif assessment.rating == 'marginal' %}Marginal Conditions
+                    {% elif assessment.rating == 'poor' %}Poor Conditions
+                    {% else %}No Fly
+                    {% endif %}
+                    {% if assessment.reasons %}<span class="font-normal opacity-80 text-sm"> · {% for reason in assessment.reasons %}{{ reason }}{% if not forloop.last %} · {% endif %}{% endfor %}</span>{% endif %}
+                </div>
+                {% endwith %}
+                {% endif %}
+
                 <!-- Header with source badges -->
                 <div class="flex items-center justify-between mb-2">
                     <div class="flex items-center gap-2 flex-wrap">
@@ -48,25 +67,6 @@
                         </svg>
                     </button>
                 </div>
-
-                <!-- Flight Conditions Assessment (hide for historical) -->
-                {% if not weather.historical %}
-                {% with assessment=weather.rc_flying_assessment %}
-                <div class="mb-3 w-full rounded-lg px-3 py-1.5 text-center font-semibold
-                    {% if assessment.rating == 'good' %}bg-success text-success-content
-                    {% elif assessment.rating == 'marginal' %}bg-warning text-warning-content
-                    {% elif assessment.rating == 'poor' %}bg-error text-error-content
-                    {% else %}bg-neutral text-neutral-content
-                    {% endif %}">
-                    {% if assessment.rating == 'good' %}Good Flight Conditions
-                    {% elif assessment.rating == 'marginal' %}Marginal Conditions
-                    {% elif assessment.rating == 'poor' %}Poor Conditions
-                    {% else %}No Fly
-                    {% endif %}
-                    {% if assessment.reasons %}<span class="font-normal opacity-80 text-sm"> · {% for reason in assessment.reasons %}{{ reason }}{% if not forloop.last %} · {% endif %}{% endfor %}</span>{% endif %}
-                </div>
-                {% endwith %}
-                {% endif %}
 
                 <!-- Short Forecast (from NWS if available) -->
                 {% if weather.short_forecast %}
