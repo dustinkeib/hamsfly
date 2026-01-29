@@ -36,6 +36,8 @@ RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+if DEBUG:
+    ALLOWED_HOSTS.append('*')  # Allow all hosts in development
 
 # CSRF trusted origins for Render
 CSRF_TRUSTED_ORIGINS = []
