@@ -8,3 +8,4 @@ python manage.py test apps.hamsalert.tests --verbosity=1
 
 python manage.py collectstatic --no-input
 python manage.py migrate
+python manage.py createcachetable --dry-run || python manage.py createcachetable

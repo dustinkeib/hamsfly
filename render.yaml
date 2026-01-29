@@ -1,0 +1,26 @@
+databases:
+  - name: hamsfly-db
+    plan: free
+    databaseName: hamsfly
+    user: hamsfly
+
+services:
+  - type: web
+    name: hamsfly
+    runtime: python
+    plan: free
+    buildCommand: ./build.sh
+    startCommand: gunicorn core.wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hamsfly-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "false"
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      - key: AVWX_API_TOKEN
+        sync: false  # Set manually in Render dashboard
