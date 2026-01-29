@@ -369,16 +369,18 @@ class RateLimitCounterTests(TestCase):
         """Rate limit counts openmeteo, hourly, and historical record types."""
         from apps.hamsalert.models import WeatherRecord
         from decimal import Decimal
-        from datetime import date
+        from datetime import date, timedelta
+        from django.utils import timezone
 
         # Create some records (well under limit)
         for i in range(3):
             WeatherRecord.objects.create(
                 weather_type='openmeteo',
-                target_date=date.today(),
+                target_date=date.today() + timedelta(days=i),  # Different dates to avoid unique constraint
                 latitude=Decimal('40.9781'),
                 longitude=Decimal('-124.1086'),
                 data={'test': f'data_{i}'},
+                fetched_at=timezone.now(),
             )
 
         # Should still allow since we're well under threshold
@@ -387,15 +389,17 @@ class RateLimitCounterTests(TestCase):
     def test_check_rate_limit_ignores_non_openmeteo_records(self):
         """Rate limit does not count METAR, TAF, or NWS records."""
         from apps.hamsalert.models import WeatherRecord
-        from datetime import date
+        from datetime import date, timedelta
+        from django.utils import timezone
 
         # Create many non-Open-Meteo records (METAR, TAF, NWS)
         for i in range(100):
             WeatherRecord.objects.create(
                 weather_type='metar',
-                target_date=date.today(),
+                target_date=date.today() + timedelta(days=i),  # Different dates to avoid unique constraint
                 station='KACV',
                 data={'test': f'metar_{i}'},
+                fetched_at=timezone.now(),
             )
 
         # Should still allow since METAR records don't count

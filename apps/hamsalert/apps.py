@@ -6,6 +6,7 @@ class HamsalertConfig(AppConfig):
     name = 'apps.hamsalert'
 
     def ready(self):
-        from . import keepalive, scheduler
+        from . import keepalive, scheduler, weather_poller
         keepalive.start()
         scheduler.start()
+        weather_poller.start()

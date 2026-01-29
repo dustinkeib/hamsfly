@@ -1128,7 +1128,7 @@ class WeatherService:
         api_response_time_ms: Optional[int] = None,
     ) -> None:
         """
-        Save weather data to database.
+        Update existing record or create new one.
 
         Args:
             weather_type: Type of weather data
@@ -1142,15 +1142,23 @@ class WeatherService:
         from apps.hamsalert.models import WeatherRecord
 
         try:
-            WeatherRecord.objects.create(
-                weather_type=weather_type,
-                target_date=target_date,
-                station=station or '',
-                latitude=Decimal(str(lat)) if lat is not None else None,
-                longitude=Decimal(str(lon)) if lon is not None else None,
-                data=data,
-                api_response_time_ms=api_response_time_ms,
-            )
+            lookup = {
+                'weather_type': weather_type,
+                'target_date': target_date,
+                'station': station or '',
+            }
+            # Add lat/lon to lookup if provided (for coordinate-based records)
+            if lat is not None and lon is not None:
+                lookup['latitude'] = Decimal(str(lat))
+                lookup['longitude'] = Decimal(str(lon))
+
+            defaults = {
+                'data': data,
+                'fetched_at': timezone.now(),
+                'api_response_time_ms': api_response_time_ms,
+            }
+
+            WeatherRecord.objects.update_or_create(defaults=defaults, **lookup)
             logger.debug(f"Saved {weather_type} to DB for {target_date}")
         except Exception as e:
             logger.warning(f"Failed to save weather to DB: {e}")
@@ -1661,6 +1669,105 @@ class WeatherService:
             cached_at=timezone.now(),
             source=primary_source,
         )
+
+    def get_weather_from_db(
+        self,
+        target_date: date,
+        station: Optional[str] = None
+    ) -> Optional[CompositeWeatherData]:
+        """
+        Read-only: get weather data from DB. Never calls APIs.
+
+        Returns CompositeWeatherData from DB records only.
+        Returns None if no data exists (poller hasn't run yet).
+
+        Used by views - they should never call APIs directly.
+        """
+        station = (station or self.default_station).upper()
+        lat, lon = self.nws_location
+        local_today = datetime.now(self.local_timezone).date()
+        days_out = (target_date - local_today).days
+
+        results = {
+            'metar': None,
+            'taf': None,
+            'nws': None,
+            'openmeteo': None,
+            'historical': None,
+        }
+
+        # Historical data for past dates
+        if days_out < 0:
+            db_data = self._get_from_db('historical', target_date, lat=lat, lon=lon)
+            if db_data:
+                results['historical'] = self._deserialize_historical_data(db_data)
+        else:
+            # Day 0: METAR
+            if days_out == 0:
+                db_data = self._get_from_db('metar', target_date, station=station)
+                if db_data:
+                    results['metar'] = self._deserialize_metar_data(db_data)
+
+            # Days 0-1: TAF
+            if days_out <= 1:
+                db_data = self._get_from_db('taf', target_date, station=station)
+                if db_data:
+                    results['taf'] = self._deserialize_taf_data(db_data)
+
+            # Days 2-7: NWS
+            if 2 <= days_out <= 7:
+                db_data = self._get_from_db('nws', target_date, lat=lat, lon=lon)
+                if db_data:
+                    results['nws'] = self._deserialize_nws_data(db_data)
+
+            # Days 0-15: OpenMeteo
+            if days_out <= 15:
+                db_data = self._get_from_db('openmeteo', target_date, lat=lat, lon=lon)
+                if db_data:
+                    results['openmeteo'] = self._deserialize_openmeteo_data(db_data)
+
+        # Check if we have any data
+        has_data = any(results.values())
+        if not has_data:
+            return None
+
+        # Determine primary source
+        if results['metar']:
+            primary_source = WeatherSource.METAR
+        elif results['taf']:
+            primary_source = WeatherSource.TAF
+        elif results['nws']:
+            primary_source = WeatherSource.NWS
+        elif results['openmeteo']:
+            primary_source = WeatherSource.OPENMETEO
+        elif results['historical']:
+            primary_source = WeatherSource.HISTORICAL
+        else:
+            primary_source = WeatherSource.UNAVAILABLE
+
+        return CompositeWeatherData(
+            target_date=target_date,
+            metar=results['metar'],
+            taf=results['taf'],
+            nws=results['nws'],
+            openmeteo=results['openmeteo'],
+            historical=results['historical'],
+            cached_at=timezone.now(),
+            source=primary_source,
+        )
+
+    def get_hourly_from_db(self, target_date: date) -> Optional['HourlyForecastData']:
+        """
+        Read-only: get hourly forecast data from DB. Never calls APIs.
+
+        Returns HourlyForecastData from DB records only.
+        Returns None if no data exists (poller hasn't run yet).
+        """
+        lat, lon = self.nws_location
+        db_data = self._get_from_db('hourly', target_date, lat=lat, lon=lon)
+        if db_data:
+            return self._deserialize_hourly_data(db_data)
+        return None
 
     def clear_all_cache_for_date(
         self,

@@ -421,6 +421,7 @@ class WeatherRecordModelTests(TestCase):
             target_date=date.today(),
             station='KACV',
             data={'raw': 'METAR data'},
+            fetched_at=timezone.now(),
         )
 
         self.assertEqual(record.station, 'KACV')
@@ -435,6 +436,7 @@ class WeatherRecordModelTests(TestCase):
             latitude=Decimal('40.978100'),
             longitude=Decimal('-124.108600'),
             data={'test': 'data'},
+            fetched_at=timezone.now(),
         )
 
         self.assertEqual(record.latitude, Decimal('40.978100'))
@@ -442,12 +444,13 @@ class WeatherRecordModelTests(TestCase):
         self.assertEqual(record.station, '')
 
     def test_weather_type_choices(self):
-        for weather_type in WeatherRecord.WeatherType:
+        for i, weather_type in enumerate(WeatherRecord.WeatherType):
             record = WeatherRecord.objects.create(
                 weather_type=weather_type,
-                target_date=date.today(),
+                target_date=date.today() + timedelta(days=i),  # Different dates to avoid unique constraint
                 station='TEST',
                 data={},
+                fetched_at=timezone.now(),
             )
             self.assertEqual(record.weather_type, weather_type)
 
@@ -457,16 +460,15 @@ class WeatherRecordModelTests(TestCase):
             target_date=date.today(),
             station='KACV',
             data={'order': 'old'},
-        )
-        WeatherRecord.objects.filter(pk=old_record.pk).update(
-            fetched_at=timezone.now() - timedelta(hours=1)
+            fetched_at=timezone.now() - timedelta(hours=1),
         )
 
         new_record = WeatherRecord.objects.create(
             weather_type=WeatherRecord.WeatherType.METAR,
-            target_date=date.today(),
+            target_date=date.today() + timedelta(days=1),  # Different date to avoid unique constraint
             station='KACV',
             data={'order': 'new'},
+            fetched_at=timezone.now(),
         )
 
         records = list(WeatherRecord.objects.all())
@@ -740,13 +742,14 @@ class RateLimitDBCountTests(TestCase):
     def test_check_rate_limit_counts_openmeteo_types(self):
         """Should count openmeteo, hourly, and historical records."""
         # Create records for Open-Meteo API types
-        for weather_type in ['openmeteo', 'hourly', 'historical']:
+        for i, weather_type in enumerate(['openmeteo', 'hourly', 'historical']):
             WeatherRecord.objects.create(
                 weather_type=weather_type,
-                target_date=date.today(),
+                target_date=date.today() + timedelta(days=i),  # Different dates to avoid unique constraint
                 latitude=Decimal('40.9781'),
                 longitude=Decimal('-124.1086'),
                 data={'test': 'data'},
+                fetched_at=timezone.now(),
             )
 
         # With 3 records, should still be under limit
@@ -759,9 +762,10 @@ class RateLimitDBCountTests(TestCase):
         for i in range(100):
             WeatherRecord.objects.create(
                 weather_type='metar',
-                target_date=date.today(),
+                target_date=date.today() + timedelta(days=i),  # Different dates to avoid unique constraint
                 station='KACV',
                 data={'test': f'data_{i}'},
+                fetched_at=timezone.now(),
             )
 
         # Should still return True since these don't count

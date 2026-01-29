@@ -58,7 +58,7 @@ class WeatherRecord(models.Model):
     data = models.JSONField()
 
     # Metadata
-    fetched_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    fetched_at = models.DateTimeField(db_index=True)
     api_response_time_ms = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
@@ -71,6 +71,12 @@ class WeatherRecord(models.Model):
             models.Index(
                 fields=['weather_type', 'target_date', 'latitude', 'longitude'],
                 name='weather_location_idx',
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['weather_type', 'target_date', 'station', 'latitude', 'longitude'],
+                name='weather_unique_record',
             ),
         ]
 

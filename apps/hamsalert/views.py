@@ -9,7 +9,7 @@ from django.views.decorators.http import require_GET
 from zoneinfo import ZoneInfo
 
 from .models import Event
-from .services import CompositeWeatherData, WeatherService, WeatherServiceError, WeatherSource
+from .services import CompositeWeatherData, WeatherService, WeatherSource
 
 
 # Cache TTLs by source (must match settings)
@@ -102,24 +102,21 @@ def day_events(request, year, month, day):
     event_date = date(year, month, day)
     events = Event.objects.filter(date=event_date)
 
-    # Fetch weather data from all applicable sources
+    # Read weather data from DB only (poller updates DB in background)
     weather = None
     weather_error = None
     weather_service = WeatherService()
 
     if weather_service.is_configured():
         station = request.GET.get('station')
-        try:
-            weather = weather_service.get_all_weather_for_date(event_date, station)
-            if not weather.sources:
-                weather = None
-                days_out = (event_date - date.today()).days
-                if days_out > 15:
-                    weather_error = "No forecast beyond 16 days"
-                elif days_out >= 0:
-                    weather_error = "Weather data temporarily unavailable"
-        except WeatherServiceError as e:
-            weather_error = str(e)
+        weather = weather_service.get_weather_from_db(event_date, station)
+        if not weather or not weather.sources:
+            weather = None
+            days_out = (event_date - date.today()).days
+            if days_out > 15:
+                weather_error = "No forecast beyond 16 days"
+            elif days_out >= 0:
+                weather_error = "Weather data not yet available"
 
     refresh = get_refresh_info(weather)
     context = {
@@ -136,7 +133,7 @@ def day_events(request, year, month, day):
 
 @require_GET
 def weather_refresh(request):
-    """HTMX endpoint to refresh weather data (bypasses cache)."""
+    """HTMX endpoint to refresh weather data (reads from DB)."""
     weather = None
     weather_error = None
     weather_service = WeatherService()
@@ -156,17 +153,14 @@ def weather_refresh(request):
 
     if weather_service.is_configured():
         station = request.GET.get('station')
-        try:
-            weather = weather_service.get_all_weather_for_date(target_date, station)
-            if not weather.sources:
-                weather = None
-                days_out = (target_date - date.today()).days
-                if days_out > 15:
-                    weather_error = "No forecast beyond 16 days"
-                elif days_out >= 0:
-                    weather_error = "Weather data temporarily unavailable"
-        except WeatherServiceError as e:
-            weather_error = str(e)
+        weather = weather_service.get_weather_from_db(target_date, station)
+        if not weather or not weather.sources:
+            weather = None
+            days_out = (target_date - date.today()).days
+            if days_out > 15:
+                weather_error = "No forecast beyond 16 days"
+            elif days_out >= 0:
+                weather_error = "Weather data not yet available"
 
     refresh = get_refresh_info(weather)
     context = {
@@ -182,7 +176,7 @@ def weather_refresh(request):
 
 @require_GET
 def hourly_forecast(request, year, month, day):
-    """Display hourly forecast page for a specific date."""
+    """Display hourly forecast page for a specific date (reads from DB)."""
     try:
         target_date = date(year, month, day)
     except ValueError:
@@ -201,14 +195,10 @@ def hourly_forecast(request, year, month, day):
             'target_date': target_date,
         })
 
-    hourly_data = None
+    hourly_data = weather_service.get_hourly_from_db(target_date)
     error = None
-    try:
-        hourly_data = weather_service.get_hourly_forecast(target_date)
-        if not hourly_data or not hourly_data.hours:
-            error = 'No hourly forecast data available for this date.'
-    except WeatherServiceError as e:
-        error = str(e)
+    if not hourly_data or not hourly_data.hours:
+        error = 'Hourly forecast data not yet available.'
 
     is_today = target_date == local_today
     now = datetime.now(local_tz) if is_today else None

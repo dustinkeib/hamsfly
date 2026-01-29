@@ -18,6 +18,7 @@ class CleanupWeatherRecordsTests(TestCase):
     def setUp(self):
         cache.clear()
         WeatherRecord.objects.all().delete()
+        self._record_counter = 0
 
     def tearDown(self):
         cache.clear()
@@ -25,14 +26,16 @@ class CleanupWeatherRecordsTests(TestCase):
     def create_weather_record(self, days_ago, weather_type=None):
         """Helper to create a WeatherRecord with a specific age."""
         weather_type = weather_type or WeatherRecord.WeatherType.METAR
+        old_time = timezone.now() - timedelta(days=days_ago)
+        # Use counter to ensure unique records (different target_date)
+        self._record_counter += 1
         record = WeatherRecord.objects.create(
             weather_type=weather_type,
-            target_date=timezone.now().date(),
+            target_date=timezone.now().date() + timedelta(days=self._record_counter),
             station='KACV',
             data={'test': 'data'},
+            fetched_at=old_time,
         )
-        old_time = timezone.now() - timedelta(days=days_ago)
-        WeatherRecord.objects.filter(pk=record.pk).update(fetched_at=old_time)
         return record
 
     @override_settings(WEATHER_DB_CLEANUP_DAYS=30)
@@ -95,18 +98,21 @@ class CleanupManagementCommandTests(TestCase):
 
     def setUp(self):
         WeatherRecord.objects.all().delete()
+        self._record_counter = 0
 
     def create_weather_record(self, days_ago, weather_type=None):
         """Helper to create a WeatherRecord with a specific age."""
         weather_type = weather_type or WeatherRecord.WeatherType.METAR
+        old_time = timezone.now() - timedelta(days=days_ago)
+        # Use counter to ensure unique records (different target_date)
+        self._record_counter += 1
         record = WeatherRecord.objects.create(
             weather_type=weather_type,
-            target_date=timezone.now().date(),
+            target_date=timezone.now().date() + timedelta(days=self._record_counter),
             station='KACV',
             data={'test': 'data'},
+            fetched_at=old_time,
         )
-        old_time = timezone.now() - timedelta(days=days_ago)
-        WeatherRecord.objects.filter(pk=record.pk).update(fetched_at=old_time)
         return record
 
     @override_settings(WEATHER_DB_CLEANUP_DAYS=30)
