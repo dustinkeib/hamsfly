@@ -128,9 +128,9 @@ class RcAssessmentTests(TestCase):
         self.assertIn('Reduced visibility: 2 SM', result['reasons'])
 
     def test_poor_low_ceiling(self):
-        result = calculate_rc_assessment(wind_speed=5, wind_gust=None, ceiling=400)
+        result = calculate_rc_assessment(wind_speed=5, wind_gust=None, ceiling=350)
         self.assertEqual(result['rating'], 'poor')
-        self.assertIn('Very low ceiling: 400 ft', result['reasons'])
+        self.assertIn('Very low ceiling: 350 ft', result['reasons'])
 
     def test_marginal_ceiling(self):
         result = calculate_rc_assessment(wind_speed=5, wind_gust=None, ceiling=800)

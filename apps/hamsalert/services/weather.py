@@ -144,7 +144,7 @@ def calculate_rc_assessment(
 
     # Ceiling assessment
     if ceiling is not None:
-        if ceiling < 500:
+        if ceiling < 400:
             if rating in ('good', 'marginal'):
                 rating = 'poor'
             reasons.append(f"Very low ceiling: {ceiling} ft")
