@@ -156,8 +156,6 @@ def weather_refresh(request):
 
     if weather_service.is_configured():
         station = request.GET.get('station')
-        # Clear all applicable caches for this date
-        weather_service.clear_all_cache_for_date(target_date, station)
         try:
             weather = weather_service.get_all_weather_for_date(target_date, station)
             if not weather.sources:
