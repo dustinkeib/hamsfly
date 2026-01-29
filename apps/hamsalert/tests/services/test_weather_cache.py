@@ -330,26 +330,6 @@ class TwoTierCacheIntegrationTests(TestCase):
         self.assertEqual(WeatherRecord.objects.filter(weather_type='openmeteo').count(), 1)
 
     @patch.object(WeatherService, '_fetch_openmeteo_forecast')
-    def test_memory_cache_hit_skips_db_and_api(self, mock_fetch):
-        """On memory cache hit, should not query DB or API."""
-        cache_key = self.service._cache_key('openmeteo', f"{self.lat}_{self.lon}_{self.test_date.isoformat()}")
-        cached_data = OpenMeteoForecastData(
-            location=(self.lat, self.lon),
-            target_date=self.test_date,
-            wind=WindData(direction=180, speed=5, gust=None, direction_repr='180'),
-            temperature_high=18,
-            temperature_low=10,
-            precipitation_probability=5,
-        )
-        cache.set(cache_key, cached_data, 3600)
-
-        result = self.service._get_openmeteo_forecast(self.test_date)
-
-        mock_fetch.assert_not_called()
-        self.assertEqual(result.wind.speed, 5)
-        self.assertTrue(result.from_cache)
-
-    @patch.object(WeatherService, '_fetch_openmeteo_forecast')
     def test_db_cache_hit_skips_api(self, mock_fetch):
         """On DB cache hit (memory miss), should not call API."""
         # Store in DB

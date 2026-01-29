@@ -1925,26 +1925,17 @@ class WeatherService:
             raise WeatherServiceError(f"Failed to parse NWS data: {e}")
 
     def _get_openmeteo_forecast(self, target_date: date) -> Optional[OpenMeteoForecastData]:
-        """Get Open-Meteo extended forecast for a target date with two-tier storage."""
+        """Get Open-Meteo extended forecast for a target date with DB cache."""
         lat, lon = self.nws_location  # Reuse same location
-        cache_key = self._cache_key('openmeteo', f"{lat}_{lon}_{target_date.isoformat()}")
         ttl = self.openmeteo_cache_ttl
 
-        # 1. Check in-memory cache (fast path)
-        cached_data = cache.get(cache_key)
-        if cached_data is not None:
-            cached_data.from_cache = True
-            logger.info(f"Cache hit: OpenMeteo {lat},{lon}")
-            return cached_data
-
-        # 2. Check DB (if fresh enough)
+        # 1. Check DB cache
         db_data = self._get_from_db('openmeteo', target_date, lat=lat, lon=lon, max_age_seconds=ttl)
         if db_data:
             data = self._deserialize_openmeteo_data(db_data)
-            cache.set(cache_key, data, ttl)
             return data
 
-        # 3. Fetch from API
+        # 2. Fetch from API
         logger.info(f"API fetch: OpenMeteo {lat},{lon}")
         try:
             start_time = time.time()
@@ -1952,7 +1943,6 @@ class WeatherService:
             response_time_ms = int((time.time() - start_time) * 1000)
 
             if data:
-                cache.set(cache_key, data, ttl)
                 self._save_to_db(
                     'openmeteo', target_date, self._serialize_openmeteo_data(data),
                     lat=lat, lon=lon, api_response_time_ms=response_time_ms
@@ -1960,7 +1950,7 @@ class WeatherService:
             return data
 
         except WeatherServiceError:
-            # 4. Fallback to stale DB data
+            # 3. Fallback to stale DB data
             stale_data = self._get_from_db('openmeteo', target_date, lat=lat, lon=lon, max_age_seconds=None)
             if stale_data:
                 logger.warning(f"Using stale DB data for Open-Meteo {lat},{lon} on {target_date}")
@@ -2045,26 +2035,17 @@ class WeatherService:
             raise WeatherServiceError(f"Failed to parse Open-Meteo data: {e}")
 
     def get_hourly_forecast(self, target_date: date) -> Optional['HourlyForecastData']:
-        """Get hourly forecast data for a target date (0-15 days out) with two-tier storage."""
+        """Get hourly forecast data for a target date (0-15 days out) with DB cache."""
         lat, lon = self.nws_location
-        cache_key = self._cache_key('hourly', f"{lat}_{lon}_{target_date.isoformat()}")
         ttl = self.openmeteo_cache_ttl
 
-        # 1. Check in-memory cache (fast path)
-        cached_data = cache.get(cache_key)
-        if cached_data is not None:
-            cached_data.from_cache = True
-            logger.info(f"Cache hit: Hourly {lat},{lon}")
-            return cached_data
-
-        # 2. Check DB (if fresh enough)
+        # 1. Check DB cache
         db_data = self._get_from_db('hourly', target_date, lat=lat, lon=lon, max_age_seconds=ttl)
         if db_data:
             data = self._deserialize_hourly_data(db_data)
-            cache.set(cache_key, data, ttl)
             return data
 
-        # 3. Fetch from API
+        # 2. Fetch from API
         logger.info(f"API fetch: Hourly {lat},{lon}")
         try:
             start_time = time.time()
@@ -2072,7 +2053,6 @@ class WeatherService:
             response_time_ms = int((time.time() - start_time) * 1000)
 
             if data:
-                cache.set(cache_key, data, ttl)
                 self._save_to_db(
                     'hourly', target_date, self._serialize_hourly_data(data),
                     lat=lat, lon=lon, api_response_time_ms=response_time_ms
@@ -2080,7 +2060,7 @@ class WeatherService:
             return data
 
         except WeatherServiceError:
-            # 4. Fallback to stale DB data
+            # 3. Fallback to stale DB data
             stale_data = self._get_from_db('hourly', target_date, lat=lat, lon=lon, max_age_seconds=None)
             if stale_data:
                 logger.warning(f"Using stale DB data for hourly {lat},{lon} on {target_date}")
@@ -2164,26 +2144,17 @@ class WeatherService:
             raise WeatherServiceError(f"Failed to parse hourly data: {e}")
 
     def _get_historical_weather(self, target_date: date) -> Optional[HistoricalWeatherData]:
-        """Get historical weather data for a past date with two-tier storage."""
+        """Get historical weather data for a past date with DB cache."""
         lat, lon = self.nws_location
-        cache_key = self._cache_key('historical', f"{lat}_{lon}_{target_date.isoformat()}")
         ttl = self.historical_cache_ttl
 
-        # 1. Check in-memory cache (fast path)
-        cached_data = cache.get(cache_key)
-        if cached_data is not None:
-            cached_data.from_cache = True
-            logger.info(f"Cache hit: Historical {lat},{lon}")
-            return cached_data
-
-        # 2. Check DB (if fresh enough)
+        # 1. Check DB cache
         db_data = self._get_from_db('historical', target_date, lat=lat, lon=lon, max_age_seconds=ttl)
         if db_data:
             data = self._deserialize_historical_data(db_data)
-            cache.set(cache_key, data, ttl)
             return data
 
-        # 3. Fetch from API
+        # 2. Fetch from API
         logger.info(f"API fetch: Historical {lat},{lon}")
         try:
             start_time = time.time()
@@ -2191,7 +2162,6 @@ class WeatherService:
             response_time_ms = int((time.time() - start_time) * 1000)
 
             if data:
-                cache.set(cache_key, data, ttl)
                 self._save_to_db(
                     'historical', target_date, self._serialize_historical_data(data),
                     lat=lat, lon=lon, api_response_time_ms=response_time_ms
@@ -2199,7 +2169,7 @@ class WeatherService:
             return data
 
         except WeatherServiceError:
-            # 4. Fallback to stale DB data
+            # 3. Fallback to stale DB data
             stale_data = self._get_from_db('historical', target_date, lat=lat, lon=lon, max_age_seconds=None)
             if stale_data:
                 logger.warning(f"Using stale DB data for historical {lat},{lon} on {target_date}")
