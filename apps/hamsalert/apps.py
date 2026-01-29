@@ -6,6 +6,12 @@ class HamsalertConfig(AppConfig):
     name = 'apps.hamsalert'
 
     def ready(self):
+        import sys
+
+        # Don't start background threads during tests
+        if 'test' in sys.argv:
+            return
+
         from . import keepalive, scheduler, weather_poller
         keepalive.start()
         scheduler.start()
