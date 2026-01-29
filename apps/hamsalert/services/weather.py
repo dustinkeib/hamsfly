@@ -1037,7 +1037,7 @@ class WeatherService:
 
         record = query.order_by('-fetched_at').first()
         if record:
-            logger.debug(f"DB hit for {weather_type} on {target_date}")
+            logger.info(f"DB cache hit: {weather_type} for {target_date}")
             return record.data
         return None
 
@@ -1382,11 +1382,11 @@ class WeatherService:
         cached_data = cache.get(cache_key)
         if cached_data is not None:
             cached_data.from_cache = True
-            logger.debug(f"METAR cache hit for {station}")
+            logger.info(f"Cache hit: METAR {station}")
             return cached_data
 
         # Fetch from API
-        logger.info(f"Fetching METAR for {station} from AVWX API")
+        logger.info(f"API fetch: METAR {station}")
         try:
             data = self._fetch_metar_from_api(station)
             if data:
@@ -1493,11 +1493,11 @@ class WeatherService:
         cached_data = cache.get(cache_key)
         if cached_data is not None:
             cached_data.from_cache = True
-            logger.debug(f"TAF cache hit for {station}")
+            logger.info(f"Cache hit: TAF {station}")
             return cached_data
 
         # Fetch from API
-        logger.info(f"Fetching TAF for {station} from AVWX API")
+        logger.info(f"API fetch: TAF {station}")
         try:
             data = self._fetch_taf_from_api(station, target_date)
             if data:
@@ -1659,11 +1659,11 @@ class WeatherService:
         cached_data = cache.get(cache_key)
         if cached_data is not None:
             cached_data.from_cache = True
-            logger.debug(f"NWS cache hit for {lat},{lon}")
+            logger.info(f"Cache hit: NWS {lat},{lon}")
             return cached_data
 
         # Fetch from API
-        logger.info(f"Fetching NWS forecast for {lat},{lon}")
+        logger.info(f"API fetch: NWS {lat},{lon}")
         try:
             data = self._fetch_nws_forecast(target_date)
             if data:
@@ -1849,7 +1849,7 @@ class WeatherService:
         cached_data = cache.get(cache_key)
         if cached_data is not None:
             cached_data.from_cache = True
-            logger.debug(f"Open-Meteo cache hit for {lat},{lon}")
+            logger.info(f"Cache hit: OpenMeteo {lat},{lon}")
             return cached_data
 
         # 2. Check DB (if fresh enough)
@@ -1860,7 +1860,7 @@ class WeatherService:
             return data
 
         # 3. Fetch from API
-        logger.info(f"Fetching Open-Meteo forecast for {lat},{lon}")
+        logger.info(f"API fetch: OpenMeteo {lat},{lon}")
         try:
             start_time = time.time()
             data = self._fetch_openmeteo_forecast(target_date)
@@ -1969,7 +1969,7 @@ class WeatherService:
         cached_data = cache.get(cache_key)
         if cached_data is not None:
             cached_data.from_cache = True
-            logger.debug(f"Hourly cache hit for {lat},{lon} on {target_date}")
+            logger.info(f"Cache hit: Hourly {lat},{lon}")
             return cached_data
 
         # 2. Check DB (if fresh enough)
@@ -1980,7 +1980,7 @@ class WeatherService:
             return data
 
         # 3. Fetch from API
-        logger.info(f"Fetching hourly forecast for {lat},{lon} on {target_date}")
+        logger.info(f"API fetch: Hourly {lat},{lon}")
         try:
             start_time = time.time()
             data = self._fetch_hourly_forecast(target_date)
@@ -2088,7 +2088,7 @@ class WeatherService:
         cached_data = cache.get(cache_key)
         if cached_data is not None:
             cached_data.from_cache = True
-            logger.debug(f"Historical cache hit for {lat},{lon} on {target_date}")
+            logger.info(f"Cache hit: Historical {lat},{lon}")
             return cached_data
 
         # 2. Check DB (if fresh enough)
@@ -2099,7 +2099,7 @@ class WeatherService:
             return data
 
         # 3. Fetch from API
-        logger.info(f"Fetching historical weather for {lat},{lon} on {target_date}")
+        logger.info(f"API fetch: Historical {lat},{lon}")
         try:
             start_time = time.time()
             data = self._fetch_historical_weather(target_date)

@@ -162,3 +162,28 @@ WEATHER_DB_CLEANUP_DAYS = 30  # Delete records older than this
 
 # Scheduler Settings
 SCHEDULER_CLEANUP_HOUR = 3  # Run cleanup at 3am local time
+
+# Logging Configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'apps.hamsalert.services.weather': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
