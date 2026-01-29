@@ -16,7 +16,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Optional
@@ -24,7 +24,6 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from django.conf import settings
-from django.core.cache import cache
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -874,17 +873,10 @@ class RateLimitError(WeatherServiceError):
 class WeatherService:
     """Service for fetching and caching weather data from multiple sources."""
 
-    CACHE_KEY_PREFIX = 'weather_'
-
     # Rate limiting configuration
     MAX_RETRIES = 3
     BASE_DELAY = 1.0
     MAX_DELAY = 30.0
-
-    # Rate limit counter cache keys
-    RATE_LIMIT_MINUTE_KEY = 'openmeteo_rate_minute'
-    RATE_LIMIT_HOUR_KEY = 'openmeteo_rate_hour'
-    RATE_LIMIT_DAY_KEY = 'openmeteo_rate_day'
 
     def __init__(self):
         self.api_token = getattr(settings, 'AVWX_API_TOKEN', '')
@@ -973,10 +965,6 @@ class WeatherService:
 
                         raise WeatherServiceError("API rate limit exceeded after retries")
 
-                    # Increment rate counters on successful Open-Meteo response
-                    if is_openmeteo:
-                        self._increment_rate_counters()
-
                     return response
 
             except httpx.TimeoutException as e:
@@ -1027,27 +1015,51 @@ class WeatherService:
         """
         Check if we're under the Open-Meteo rate limits.
 
+        Counts recent WeatherRecord entries to track API calls.
         Returns:
             True if under limits (OK to proceed), False if at/over threshold.
         """
-        minute_count = cache.get(self.RATE_LIMIT_MINUTE_KEY, 0)
-        hour_count = cache.get(self.RATE_LIMIT_HOUR_KEY, 0)
-        day_count = cache.get(self.RATE_LIMIT_DAY_KEY, 0)
+        from apps.hamsalert.models import WeatherRecord
+
+        now = timezone.now()
+        openmeteo_types = ['openmeteo', 'hourly', 'historical']
+
+        # Count requests in last minute
+        minute_ago = now - timedelta(minutes=1)
+        minute_count = WeatherRecord.objects.filter(
+            weather_type__in=openmeteo_types,
+            fetched_at__gte=minute_ago
+        ).count()
 
         minute_threshold = int(self.rate_limit_per_minute * self.rate_limit_safety_margin)
-        hour_threshold = int(self.rate_limit_per_hour * self.rate_limit_safety_margin)
-        day_threshold = int(self.rate_limit_per_day * self.rate_limit_safety_margin)
-
         if minute_count >= minute_threshold:
             logger.warning(
                 f"Rate limit approaching: {minute_count}/{self.rate_limit_per_minute} per minute"
             )
             return False
+
+        # Count requests in last hour
+        hour_ago = now - timedelta(hours=1)
+        hour_count = WeatherRecord.objects.filter(
+            weather_type__in=openmeteo_types,
+            fetched_at__gte=hour_ago
+        ).count()
+
+        hour_threshold = int(self.rate_limit_per_hour * self.rate_limit_safety_margin)
         if hour_count >= hour_threshold:
             logger.warning(
                 f"Rate limit approaching: {hour_count}/{self.rate_limit_per_hour} per hour"
             )
             return False
+
+        # Count requests in last day
+        day_ago = now - timedelta(days=1)
+        day_count = WeatherRecord.objects.filter(
+            weather_type__in=openmeteo_types,
+            fetched_at__gte=day_ago
+        ).count()
+
+        day_threshold = int(self.rate_limit_per_day * self.rate_limit_safety_margin)
         if day_count >= day_threshold:
             logger.warning(
                 f"Rate limit approaching: {day_count}/{self.rate_limit_per_day} per day"
@@ -1055,27 +1067,6 @@ class WeatherService:
             return False
 
         return True
-
-    def _increment_rate_counters(self) -> None:
-        """
-        Increment all three rate limit counters after a successful API request.
-
-        Uses cache.get/set with TTLs to auto-expire counters:
-        - Minute counter: 60s TTL
-        - Hour counter: 3600s TTL
-        - Day counter: 86400s TTL
-        """
-        # Minute counter (60s TTL)
-        minute_count = cache.get(self.RATE_LIMIT_MINUTE_KEY, 0)
-        cache.set(self.RATE_LIMIT_MINUTE_KEY, minute_count + 1, 60)
-
-        # Hour counter (3600s TTL)
-        hour_count = cache.get(self.RATE_LIMIT_HOUR_KEY, 0)
-        cache.set(self.RATE_LIMIT_HOUR_KEY, hour_count + 1, 3600)
-
-        # Day counter (86400s TTL)
-        day_count = cache.get(self.RATE_LIMIT_DAY_KEY, 0)
-        cache.set(self.RATE_LIMIT_DAY_KEY, day_count + 1, 86400)
 
     def _get_from_db(
         self,
@@ -1277,8 +1268,248 @@ class WeatherService:
             source=WeatherSource.HISTORICAL,
         )
 
-    def _cache_key(self, prefix: str, identifier: str) -> str:
-        return f"{self.CACHE_KEY_PREFIX}{prefix}_{identifier}"
+    def _serialize_metar_data(self, data: WeatherData) -> dict:
+        """Serialize WeatherData (METAR) to dict for DB storage."""
+        return {
+            'station': data.station,
+            'raw_metar': data.raw_metar,
+            'observation_time': data.observation_time.isoformat(),
+            'wind': {
+                'direction': data.wind.direction,
+                'speed': data.wind.speed,
+                'gust': data.wind.gust,
+                'direction_repr': data.wind.direction_repr,
+            },
+            'visibility': data.visibility,
+            'visibility_repr': data.visibility_repr,
+            'clouds': [
+                {'coverage': c.coverage, 'altitude': c.altitude}
+                for c in data.clouds
+            ],
+            'temperature': data.temperature,
+            'dewpoint': data.dewpoint,
+            'flight_rules': data.flight_rules,
+        }
+
+    def _deserialize_metar_data(self, data: dict) -> WeatherData:
+        """Deserialize dict to WeatherData (METAR)."""
+        wind_data = data['wind']
+        obs_time_str = data['observation_time']
+        try:
+            obs_time = datetime.fromisoformat(obs_time_str)
+        except (ValueError, AttributeError):
+            obs_time = datetime.now()
+
+        clouds = [
+            CloudLayer(coverage=c['coverage'], altitude=c.get('altitude'))
+            for c in data.get('clouds', [])
+        ]
+
+        return WeatherData(
+            station=data['station'],
+            raw_metar=data['raw_metar'],
+            observation_time=obs_time,
+            wind=WindData(
+                direction=wind_data['direction'],
+                speed=wind_data['speed'],
+                gust=wind_data['gust'],
+                direction_repr=wind_data['direction_repr'],
+            ),
+            visibility=data['visibility'],
+            visibility_repr=data['visibility_repr'],
+            clouds=clouds,
+            temperature=data.get('temperature'),
+            dewpoint=data.get('dewpoint'),
+            flight_rules=data.get('flight_rules', 'VFR'),
+            cached_at=timezone.now(),
+            from_cache=True,
+            source=WeatherSource.METAR,
+        )
+
+    def _serialize_taf_data(self, data: TafForecastData) -> dict:
+        """Serialize TafForecastData to dict for DB storage."""
+        return {
+            'station': data.station,
+            'raw_taf': data.raw_taf,
+            'issue_time': data.issue_time.isoformat(),
+            'target_date': data.target_date.isoformat(),
+            'period': {
+                'start_time': data.period.start_time.isoformat(),
+                'end_time': data.period.end_time.isoformat(),
+                'wind': {
+                    'direction': data.period.wind.direction,
+                    'speed': data.period.wind.speed,
+                    'gust': data.period.wind.gust,
+                    'direction_repr': data.period.wind.direction_repr,
+                },
+                'visibility': data.period.visibility,
+                'clouds': [
+                    {'coverage': c.coverage, 'altitude': c.altitude}
+                    for c in data.period.clouds
+                ],
+                'flight_rules': data.period.flight_rules,
+                'raw_line': data.period.raw_line,
+            },
+            'wind': {
+                'direction': data.wind.direction,
+                'speed': data.wind.speed,
+                'gust': data.wind.gust,
+                'direction_repr': data.wind.direction_repr,
+            },
+            'visibility': data.visibility,
+            'clouds': [
+                {'coverage': c.coverage, 'altitude': c.altitude}
+                for c in data.clouds
+            ],
+            'flight_rules': data.flight_rules,
+        }
+
+    def _deserialize_taf_data(self, data: dict) -> TafForecastData:
+        """Deserialize dict to TafForecastData."""
+        wind_data = data['wind']
+        period_data = data['period']
+        period_wind = period_data['wind']
+
+        try:
+            issue_time = datetime.fromisoformat(data['issue_time'])
+        except (ValueError, AttributeError):
+            issue_time = datetime.now()
+
+        try:
+            period_start = datetime.fromisoformat(period_data['start_time'])
+        except (ValueError, AttributeError):
+            period_start = datetime.now()
+
+        try:
+            period_end = datetime.fromisoformat(period_data['end_time'])
+        except (ValueError, AttributeError):
+            period_end = datetime.now()
+
+        period_clouds = [
+            CloudLayer(coverage=c['coverage'], altitude=c.get('altitude'))
+            for c in period_data.get('clouds', [])
+        ]
+
+        clouds = [
+            CloudLayer(coverage=c['coverage'], altitude=c.get('altitude'))
+            for c in data.get('clouds', [])
+        ]
+
+        period = TafForecastPeriod(
+            start_time=period_start,
+            end_time=period_end,
+            wind=WindData(
+                direction=period_wind['direction'],
+                speed=period_wind['speed'],
+                gust=period_wind['gust'],
+                direction_repr=period_wind['direction_repr'],
+            ),
+            visibility=period_data['visibility'],
+            clouds=period_clouds,
+            flight_rules=period_data.get('flight_rules', 'VFR'),
+            raw_line=period_data.get('raw_line', ''),
+        )
+
+        return TafForecastData(
+            station=data['station'],
+            raw_taf=data['raw_taf'],
+            issue_time=issue_time,
+            target_date=date.fromisoformat(data['target_date']),
+            period=period,
+            wind=WindData(
+                direction=wind_data['direction'],
+                speed=wind_data['speed'],
+                gust=wind_data['gust'],
+                direction_repr=wind_data['direction_repr'],
+            ),
+            visibility=data['visibility'],
+            clouds=clouds,
+            flight_rules=data.get('flight_rules', 'VFR'),
+            cached_at=timezone.now(),
+            from_cache=True,
+            source=WeatherSource.TAF,
+        )
+
+    def _serialize_nws_data(self, data: NwsForecastData) -> dict:
+        """Serialize NwsForecastData to dict for DB storage."""
+        return {
+            'location': list(data.location),
+            'target_date': data.target_date.isoformat(),
+            'periods': [
+                {
+                    'name': p.name,
+                    'start_time': p.start_time.isoformat(),
+                    'end_time': p.end_time.isoformat(),
+                    'temperature': p.temperature,
+                    'temperature_unit': p.temperature_unit,
+                    'is_daytime': p.is_daytime,
+                    'wind_speed': p.wind_speed,
+                    'wind_direction': p.wind_direction,
+                    'short_forecast': p.short_forecast,
+                    'detailed_forecast': p.detailed_forecast,
+                    'precipitation_probability': p.precipitation_probability,
+                }
+                for p in data.periods
+            ],
+            'wind': {
+                'direction': data.wind.direction,
+                'speed': data.wind.speed,
+                'gust': data.wind.gust,
+                'direction_repr': data.wind.direction_repr,
+            },
+            'temperature_high': data.temperature_high,
+            'temperature_low': data.temperature_low,
+            'short_forecast': data.short_forecast,
+            'precipitation_probability': data.precipitation_probability,
+        }
+
+    def _deserialize_nws_data(self, data: dict) -> NwsForecastData:
+        """Deserialize dict to NwsForecastData."""
+        wind_data = data['wind']
+
+        periods = []
+        for p in data.get('periods', []):
+            try:
+                start_time = datetime.fromisoformat(p['start_time'])
+            except (ValueError, AttributeError):
+                start_time = datetime.now()
+            try:
+                end_time = datetime.fromisoformat(p['end_time'])
+            except (ValueError, AttributeError):
+                end_time = datetime.now()
+
+            periods.append(NwsForecastPeriod(
+                name=p['name'],
+                start_time=start_time,
+                end_time=end_time,
+                temperature=p['temperature'],
+                temperature_unit=p['temperature_unit'],
+                is_daytime=p['is_daytime'],
+                wind_speed=p['wind_speed'],
+                wind_direction=p['wind_direction'],
+                short_forecast=p['short_forecast'],
+                detailed_forecast=p['detailed_forecast'],
+                precipitation_probability=p.get('precipitation_probability'),
+            ))
+
+        return NwsForecastData(
+            location=tuple(data['location']),
+            target_date=date.fromisoformat(data['target_date']),
+            periods=periods,
+            wind=WindData(
+                direction=wind_data['direction'],
+                speed=wind_data['speed'],
+                gust=wind_data['gust'],
+                direction_repr=wind_data['direction_repr'],
+            ),
+            temperature_high=data.get('temperature_high'),
+            temperature_low=data.get('temperature_low'),
+            short_forecast=data.get('short_forecast', ''),
+            precipitation_probability=data.get('precipitation_probability'),
+            cached_at=timezone.now(),
+            from_cache=True,
+            source=WeatherSource.NWS,
+        )
 
     def get_weather_for_date(
         self,
@@ -1436,48 +1667,75 @@ class WeatherService:
         target_date: date,
         station: Optional[str] = None
     ) -> None:
-        """Clear all weather caches for a specific date."""
+        """Clear all weather caches for a specific date (DB records only)."""
+        from apps.hamsalert.models import WeatherRecord
+
         station = (station or self.default_station).upper()
         lat, lon = self.nws_location
         local_today = datetime.now(self.local_timezone).date()
         days_out = (target_date - local_today).days
 
-        # Clear all applicable caches
+        # Clear all applicable DB records
         if days_out < 0:
-            cache.delete(self._cache_key('historical', f"{lat}_{lon}_{target_date.isoformat()}"))
+            WeatherRecord.objects.filter(
+                weather_type='historical', target_date=target_date
+            ).delete()
         if days_out == 0:
-            cache.delete(self._cache_key('metar', station))
+            WeatherRecord.objects.filter(
+                weather_type='metar', target_date=target_date, station=station
+            ).delete()
         if days_out <= 1:
-            cache.delete(self._cache_key('taf', f"{station}_{target_date.isoformat()}"))
+            WeatherRecord.objects.filter(
+                weather_type='taf', target_date=target_date, station=station
+            ).delete()
         if days_out <= 7:
-            cache.delete(self._cache_key('nws', f"{lat}_{lon}_{target_date.isoformat()}"))
+            WeatherRecord.objects.filter(
+                weather_type='nws', target_date=target_date
+            ).delete()
         if days_out <= 15:
-            cache.delete(self._cache_key('openmeteo', f"{lat}_{lon}_{target_date.isoformat()}"))
+            WeatherRecord.objects.filter(
+                weather_type='openmeteo', target_date=target_date
+            ).delete()
+            WeatherRecord.objects.filter(
+                weather_type='hourly', target_date=target_date
+            ).delete()
 
     def get_weather(self, station: Optional[str] = None) -> Optional[WeatherData]:
         """Get METAR weather data for a station (legacy method for today)."""
         return self._get_metar(station)
 
     def _get_metar(self, station: Optional[str] = None) -> Optional[WeatherData]:
-        """Get METAR weather data for a station."""
+        """Get METAR weather data for a station with DB cache."""
         station = (station or self.default_station).upper()
-        cache_key = self._cache_key('metar', station)
+        local_today = datetime.now(self.local_timezone).date()
+        ttl = self.metar_cache_ttl
 
-        # Try cache first
-        cached_data = cache.get(cache_key)
-        if cached_data is not None:
-            cached_data.from_cache = True
+        # 1. Check DB cache
+        db_data = self._get_from_db('metar', local_today, station=station, max_age_seconds=ttl)
+        if db_data:
             logger.info(f"Cache hit: METAR {station}")
-            return cached_data
+            return self._deserialize_metar_data(db_data)
 
-        # Fetch from API
+        # 2. Fetch from API
         logger.info(f"API fetch: METAR {station}")
         try:
+            start_time = time.time()
             data = self._fetch_metar_from_api(station)
+            response_time_ms = int((time.time() - start_time) * 1000)
+
             if data:
-                cache.set(cache_key, data, self.metar_cache_ttl)
+                self._save_to_db(
+                    'metar', local_today, self._serialize_metar_data(data),
+                    station=station, api_response_time_ms=response_time_ms
+                )
             return data
+
         except WeatherServiceError:
+            # 3. Fallback to stale DB data
+            stale_data = self._get_from_db('metar', local_today, station=station, max_age_seconds=None)
+            if stale_data:
+                logger.warning(f"Using stale DB data for METAR {station}")
+                return self._deserialize_metar_data(stale_data)
             raise
 
     def _fetch_metar_from_api(self, station: str) -> Optional[WeatherData]:
@@ -1570,25 +1828,36 @@ class WeatherService:
             raise WeatherServiceError(f"Failed to parse weather data: {e}")
 
     def _get_taf(self, station: Optional[str], target_date: date) -> Optional[TafForecastData]:
-        """Get TAF forecast data for a station and target date."""
+        """Get TAF forecast data for a station and target date with DB cache."""
         station = (station or self.default_station).upper()
-        cache_key = self._cache_key('taf', f"{station}_{target_date.isoformat()}")
+        ttl = self.taf_cache_ttl
 
-        # Try cache first
-        cached_data = cache.get(cache_key)
-        if cached_data is not None:
-            cached_data.from_cache = True
+        # 1. Check DB cache
+        db_data = self._get_from_db('taf', target_date, station=station, max_age_seconds=ttl)
+        if db_data:
             logger.info(f"Cache hit: TAF {station}")
-            return cached_data
+            return self._deserialize_taf_data(db_data)
 
-        # Fetch from API
+        # 2. Fetch from API
         logger.info(f"API fetch: TAF {station}")
         try:
+            start_time = time.time()
             data = self._fetch_taf_from_api(station, target_date)
+            response_time_ms = int((time.time() - start_time) * 1000)
+
             if data:
-                cache.set(cache_key, data, self.taf_cache_ttl)
+                self._save_to_db(
+                    'taf', target_date, self._serialize_taf_data(data),
+                    station=station, api_response_time_ms=response_time_ms
+                )
             return data
+
         except WeatherServiceError:
+            # 3. Fallback to stale DB data
+            stale_data = self._get_from_db('taf', target_date, station=station, max_age_seconds=None)
+            if stale_data:
+                logger.warning(f"Using stale DB data for TAF {station}")
+                return self._deserialize_taf_data(stale_data)
             raise
 
     def _fetch_taf_from_api(self, station: str, target_date: date) -> Optional[TafForecastData]:
@@ -1736,25 +2005,36 @@ class WeatherService:
             raise WeatherServiceError(f"Failed to parse TAF data: {e}")
 
     def _get_nws_forecast(self, target_date: date) -> Optional[NwsForecastData]:
-        """Get NWS 7-day forecast for a target date."""
+        """Get NWS 7-day forecast for a target date with DB cache."""
         lat, lon = self.nws_location
-        cache_key = self._cache_key('nws', f"{lat}_{lon}_{target_date.isoformat()}")
+        ttl = self.nws_cache_ttl
 
-        # Try cache first
-        cached_data = cache.get(cache_key)
-        if cached_data is not None:
-            cached_data.from_cache = True
+        # 1. Check DB cache
+        db_data = self._get_from_db('nws', target_date, lat=lat, lon=lon, max_age_seconds=ttl)
+        if db_data:
             logger.info(f"Cache hit: NWS {lat},{lon}")
-            return cached_data
+            return self._deserialize_nws_data(db_data)
 
-        # Fetch from API
+        # 2. Fetch from API
         logger.info(f"API fetch: NWS {lat},{lon}")
         try:
+            start_time = time.time()
             data = self._fetch_nws_forecast(target_date)
+            response_time_ms = int((time.time() - start_time) * 1000)
+
             if data:
-                cache.set(cache_key, data, self.nws_cache_ttl)
+                self._save_to_db(
+                    'nws', target_date, self._serialize_nws_data(data),
+                    lat=lat, lon=lon, api_response_time_ms=response_time_ms
+                )
             return data
+
         except WeatherServiceError:
+            # 3. Fallback to stale DB data
+            stale_data = self._get_from_db('nws', target_date, lat=lat, lon=lon, max_age_seconds=None)
+            if stale_data:
+                logger.warning(f"Using stale DB data for NWS {lat},{lon} on {target_date}")
+                return self._deserialize_nws_data(stale_data)
             raise
 
     def _fetch_nws_forecast(self, target_date: date) -> Optional[NwsForecastData]:
@@ -2255,9 +2535,10 @@ class WeatherService:
             raise WeatherServiceError(f"Failed to parse historical data: {e}")
 
     def clear_cache(self, station: Optional[str] = None, target_date: Optional[date] = None) -> None:
-        """Clear cached weather data."""
+        """Clear cached weather data (DB records only)."""
+        from apps.hamsalert.models import WeatherRecord
+
         station = (station or self.default_station).upper()
-        lat, lon = self.nws_location
         local_today = datetime.now(self.local_timezone).date()
 
         if target_date is None:
@@ -2265,15 +2546,26 @@ class WeatherService:
 
         days_out = (target_date - local_today).days
 
-        # Clear appropriate cache based on date
+        # Clear appropriate DB records based on date
         if days_out == 0:
-            cache.delete(self._cache_key('metar', station))
+            WeatherRecord.objects.filter(
+                weather_type='metar', target_date=target_date, station=station
+            ).delete()
         elif days_out == 1:
-            cache.delete(self._cache_key('taf', f"{station}_{target_date.isoformat()}"))
+            WeatherRecord.objects.filter(
+                weather_type='taf', target_date=target_date, station=station
+            ).delete()
         elif days_out <= 7:
-            cache.delete(self._cache_key('nws', f"{lat}_{lon}_{target_date.isoformat()}"))
+            WeatherRecord.objects.filter(
+                weather_type='nws', target_date=target_date
+            ).delete()
         elif days_out <= 16:
-            cache.delete(self._cache_key('openmeteo', f"{lat}_{lon}_{target_date.isoformat()}"))
+            WeatherRecord.objects.filter(
+                weather_type='openmeteo', target_date=target_date
+            ).delete()
+            WeatherRecord.objects.filter(
+                weather_type='hourly', target_date=target_date
+            ).delete()
 
     def is_configured(self) -> bool:
         """Check if the weather service is properly configured."""

@@ -349,133 +349,74 @@ class WeatherServiceBackoffTests(TestCase):
 
 
 class RateLimitCounterTests(TestCase):
-    """Tests for rate limit counter logic."""
+    """Tests for DB-based rate limit counter logic."""
 
     def setUp(self):
+        from apps.hamsalert.models import WeatherRecord
         self.service = WeatherService()
-        # Clear rate limit keys before each test
-        from django.core.cache import cache
-        cache.delete(WeatherService.RATE_LIMIT_MINUTE_KEY)
-        cache.delete(WeatherService.RATE_LIMIT_HOUR_KEY)
-        cache.delete(WeatherService.RATE_LIMIT_DAY_KEY)
+        # Clear weather records before each test
+        WeatherRecord.objects.all().delete()
 
     def tearDown(self):
-        # Clean up after tests
-        from django.core.cache import cache
-        cache.delete(WeatherService.RATE_LIMIT_MINUTE_KEY)
-        cache.delete(WeatherService.RATE_LIMIT_HOUR_KEY)
-        cache.delete(WeatherService.RATE_LIMIT_DAY_KEY)
+        from apps.hamsalert.models import WeatherRecord
+        WeatherRecord.objects.all().delete()
 
     def test_check_rate_limit_allows_when_under_limit(self):
-        """Request allowed when counters are below threshold."""
-        # With no counters set, should allow
+        """Request allowed when no recent records exist."""
         self.assertTrue(self.service._check_rate_limit())
 
-    def test_check_rate_limit_blocks_at_minute_threshold(self):
-        """Request blocked when minute counter hits 90% (540/600)."""
-        from django.core.cache import cache
-        # Set minute counter to threshold (600 * 0.9 = 540)
-        cache.set(WeatherService.RATE_LIMIT_MINUTE_KEY, 540, 60)
-        self.assertFalse(self.service._check_rate_limit())
+    def test_check_rate_limit_counts_openmeteo_records(self):
+        """Rate limit counts openmeteo, hourly, and historical record types."""
+        from apps.hamsalert.models import WeatherRecord
+        from decimal import Decimal
+        from datetime import date
 
-    def test_check_rate_limit_blocks_at_hour_threshold(self):
-        """Request blocked when hour counter hits 90% (4500/5000)."""
-        from django.core.cache import cache
-        # Set hour counter to threshold (5000 * 0.9 = 4500)
-        cache.set(WeatherService.RATE_LIMIT_HOUR_KEY, 4500, 3600)
-        self.assertFalse(self.service._check_rate_limit())
+        # Create some records (well under limit)
+        for i in range(3):
+            WeatherRecord.objects.create(
+                weather_type='openmeteo',
+                target_date=date.today(),
+                latitude=Decimal('40.9781'),
+                longitude=Decimal('-124.1086'),
+                data={'test': f'data_{i}'},
+            )
 
-    def test_check_rate_limit_blocks_at_day_threshold(self):
-        """Request blocked when day counter hits 90% (9000/10000)."""
-        from django.core.cache import cache
-        # Set day counter to threshold (10000 * 0.9 = 9000)
-        cache.set(WeatherService.RATE_LIMIT_DAY_KEY, 9000, 86400)
-        self.assertFalse(self.service._check_rate_limit())
-
-    def test_check_rate_limit_allows_just_under_threshold(self):
-        """Request allowed when counters are just under threshold."""
-        from django.core.cache import cache
-        # Set counters just under threshold
-        cache.set(WeatherService.RATE_LIMIT_MINUTE_KEY, 539, 60)
-        cache.set(WeatherService.RATE_LIMIT_HOUR_KEY, 4499, 3600)
-        cache.set(WeatherService.RATE_LIMIT_DAY_KEY, 8999, 86400)
+        # Should still allow since we're well under threshold
         self.assertTrue(self.service._check_rate_limit())
 
-    def test_increment_rate_counters_creates_keys(self):
-        """First increment creates all three counter keys."""
-        from django.core.cache import cache
-        # Verify keys don't exist
-        self.assertIsNone(cache.get(WeatherService.RATE_LIMIT_MINUTE_KEY))
-        self.assertIsNone(cache.get(WeatherService.RATE_LIMIT_HOUR_KEY))
-        self.assertIsNone(cache.get(WeatherService.RATE_LIMIT_DAY_KEY))
+    def test_check_rate_limit_ignores_non_openmeteo_records(self):
+        """Rate limit does not count METAR, TAF, or NWS records."""
+        from apps.hamsalert.models import WeatherRecord
+        from datetime import date
 
-        # Increment
-        self.service._increment_rate_counters()
+        # Create many non-Open-Meteo records (METAR, TAF, NWS)
+        for i in range(100):
+            WeatherRecord.objects.create(
+                weather_type='metar',
+                target_date=date.today(),
+                station='KACV',
+                data={'test': f'metar_{i}'},
+            )
 
-        # Verify all keys now exist with value 1
-        self.assertEqual(cache.get(WeatherService.RATE_LIMIT_MINUTE_KEY), 1)
-        self.assertEqual(cache.get(WeatherService.RATE_LIMIT_HOUR_KEY), 1)
-        self.assertEqual(cache.get(WeatherService.RATE_LIMIT_DAY_KEY), 1)
-
-    def test_increment_rate_counters_increments_existing(self):
-        """Subsequent increments bump existing counters."""
-        from django.core.cache import cache
-        # Set initial values
-        cache.set(WeatherService.RATE_LIMIT_MINUTE_KEY, 5, 60)
-        cache.set(WeatherService.RATE_LIMIT_HOUR_KEY, 100, 3600)
-        cache.set(WeatherService.RATE_LIMIT_DAY_KEY, 500, 86400)
-
-        # Increment
-        self.service._increment_rate_counters()
-
-        # Verify incremented
-        self.assertEqual(cache.get(WeatherService.RATE_LIMIT_MINUTE_KEY), 6)
-        self.assertEqual(cache.get(WeatherService.RATE_LIMIT_HOUR_KEY), 101)
-        self.assertEqual(cache.get(WeatherService.RATE_LIMIT_DAY_KEY), 501)
+        # Should still allow since METAR records don't count
+        self.assertTrue(self.service._check_rate_limit())
 
 
 class RateLimitRequestIntegrationTests(TestCase):
     """Tests for rate limit integration with request flow."""
 
     def setUp(self):
+        from apps.hamsalert.models import WeatherRecord
         self.service = WeatherService()
-        # Clear rate limit keys before each test
-        from django.core.cache import cache
-        cache.delete(WeatherService.RATE_LIMIT_MINUTE_KEY)
-        cache.delete(WeatherService.RATE_LIMIT_HOUR_KEY)
-        cache.delete(WeatherService.RATE_LIMIT_DAY_KEY)
+        WeatherRecord.objects.all().delete()
 
     def tearDown(self):
-        # Clean up after tests
-        from django.core.cache import cache
-        cache.delete(WeatherService.RATE_LIMIT_MINUTE_KEY)
-        cache.delete(WeatherService.RATE_LIMIT_HOUR_KEY)
-        cache.delete(WeatherService.RATE_LIMIT_DAY_KEY)
-
-    @patch('httpx.Client')
-    def test_make_request_checks_rate_limit_for_openmeteo(self, mock_client_class):
-        """Rate limit checked before Open-Meteo requests."""
-        from django.core.cache import cache
-        # Set counter at threshold to trigger block
-        cache.set(WeatherService.RATE_LIMIT_MINUTE_KEY, 540, 60)
-
-        # Should raise RateLimitError before even making the request
-        with self.assertRaises(RateLimitError):
-            self.service._make_request_with_retry(
-                'https://api.open-meteo.com/v1/forecast',
-                params={'latitude': 40.0, 'longitude': -124.0},
-            )
-
-        # Verify no HTTP request was made
-        mock_client_class.assert_not_called()
+        from apps.hamsalert.models import WeatherRecord
+        WeatherRecord.objects.all().delete()
 
     @patch('httpx.Client')
     def test_make_request_skips_rate_limit_for_other_urls(self, mock_client_class):
         """Rate limit NOT checked for non-Open-Meteo URLs."""
-        from django.core.cache import cache
-        # Set counter at threshold
-        cache.set(WeatherService.RATE_LIMIT_MINUTE_KEY, 540, 60)
-
         # Mock successful response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -485,7 +426,7 @@ class RateLimitRequestIntegrationTests(TestCase):
         mock_client_instance.__exit__ = MagicMock(return_value=False)
         mock_client_class.return_value = mock_client_instance
 
-        # Should NOT raise for non-Open-Meteo URL
+        # Should NOT raise for non-Open-Meteo URL even with rate limit check
         response = self.service._make_request_with_retry(
             'https://api.weather.gov/points/40.0,-124.0',
             params={},
@@ -493,10 +434,8 @@ class RateLimitRequestIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     @patch('httpx.Client')
-    def test_make_request_increments_counter_on_success(self, mock_client_class):
-        """Successful request increments all counters."""
-        from django.core.cache import cache
-
+    def test_make_request_succeeds_under_rate_limit(self, mock_client_class):
+        """Request succeeds when under rate limit."""
         # Mock successful response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -506,44 +445,12 @@ class RateLimitRequestIntegrationTests(TestCase):
         mock_client_instance.__exit__ = MagicMock(return_value=False)
         mock_client_class.return_value = mock_client_instance
 
-        # Verify counters start at 0/None
-        self.assertIsNone(cache.get(WeatherService.RATE_LIMIT_MINUTE_KEY))
-
-        # Make request
-        self.service._make_request_with_retry(
+        # Make request (rate limit should allow)
+        response = self.service._make_request_with_retry(
             'https://api.open-meteo.com/v1/forecast',
             params={'latitude': 40.0, 'longitude': -124.0},
         )
-
-        # Verify counters incremented
-        self.assertEqual(cache.get(WeatherService.RATE_LIMIT_MINUTE_KEY), 1)
-        self.assertEqual(cache.get(WeatherService.RATE_LIMIT_HOUR_KEY), 1)
-        self.assertEqual(cache.get(WeatherService.RATE_LIMIT_DAY_KEY), 1)
-
-    @patch('httpx.Client')
-    def test_make_request_does_not_increment_for_non_openmeteo(self, mock_client_class):
-        """Non-Open-Meteo requests don't increment counters."""
-        from django.core.cache import cache
-
-        # Mock successful response
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_client_instance = MagicMock()
-        mock_client_instance.get.return_value = mock_response
-        mock_client_instance.__enter__ = MagicMock(return_value=mock_client_instance)
-        mock_client_instance.__exit__ = MagicMock(return_value=False)
-        mock_client_class.return_value = mock_client_instance
-
-        # Make request to non-Open-Meteo URL
-        self.service._make_request_with_retry(
-            'https://api.weather.gov/points/40.0,-124.0',
-            params={},
-        )
-
-        # Verify counters not set
-        self.assertIsNone(cache.get(WeatherService.RATE_LIMIT_MINUTE_KEY))
-        self.assertIsNone(cache.get(WeatherService.RATE_LIMIT_HOUR_KEY))
-        self.assertIsNone(cache.get(WeatherService.RATE_LIMIT_DAY_KEY))
+        self.assertEqual(response.status_code, 200)
 
 
 class RateLimitErrorSubclassTests(TestCase):

@@ -1,22 +1,28 @@
-"""Tests for weather service two-tier caching (in-memory + database)."""
+"""Tests for weather service database caching."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from apps.hamsalert.models import WeatherRecord
 from apps.hamsalert.services.weather import (
+    CloudLayer,
     HourlyForecastData,
     HourlyForecastEntry,
     HistoricalWeatherData,
+    NwsForecastData,
+    NwsForecastPeriod,
     OpenMeteoForecastData,
     RateLimitError,
+    TafForecastData,
+    TafForecastPeriod,
+    WeatherData,
     WeatherService,
     WeatherServiceError,
+    WeatherSource,
     WindData,
 )
 
@@ -25,14 +31,10 @@ class WeatherServiceDBCacheTests(TestCase):
     """Tests for database-level caching in WeatherService."""
 
     def setUp(self):
-        cache.clear()
         WeatherRecord.objects.all().delete()
         self.service = WeatherService()
         self.test_date = date.today() + timedelta(days=10)
         self.lat, self.lon = self.service.nws_location
-
-    def tearDown(self):
-        cache.clear()
 
     def test_get_from_db_returns_none_when_empty(self):
         result = self.service._get_from_db('openmeteo', self.test_date, lat=self.lat, lon=self.lon)
@@ -295,22 +297,18 @@ class HistoricalSerializationTests(TestCase):
         self.assertTrue(data.from_cache)
 
 
-class TwoTierCacheIntegrationTests(TestCase):
-    """Integration tests for the two-tier caching strategy."""
+class DBCacheIntegrationTests(TestCase):
+    """Integration tests for the DB caching strategy."""
 
     def setUp(self):
-        cache.clear()
         WeatherRecord.objects.all().delete()
         self.service = WeatherService()
         self.test_date = date.today() + timedelta(days=10)
         self.lat, self.lon = self.service.nws_location
 
-    def tearDown(self):
-        cache.clear()
-
     @patch.object(WeatherService, '_fetch_openmeteo_forecast')
     def test_cache_miss_fetches_from_api_and_stores(self, mock_fetch):
-        """On cache miss, should fetch from API and store in both cache and DB."""
+        """On cache miss, should fetch from API and store in DB."""
         mock_data = OpenMeteoForecastData(
             location=(self.lat, self.lon),
             target_date=self.test_date,
@@ -331,7 +329,7 @@ class TwoTierCacheIntegrationTests(TestCase):
 
     @patch.object(WeatherService, '_fetch_openmeteo_forecast')
     def test_db_cache_hit_skips_api(self, mock_fetch):
-        """On DB cache hit (memory miss), should not call API."""
+        """On DB cache hit, should not call API."""
         # Store in DB
         db_data = {
             'location': [self.lat, self.lon],
@@ -474,3 +472,298 @@ class WeatherRecordModelTests(TestCase):
         records = list(WeatherRecord.objects.all())
         self.assertEqual(records[0].pk, new_record.pk)
         self.assertEqual(records[1].pk, old_record.pk)
+
+
+class MetarSerializationTests(TestCase):
+    """Tests for METAR data serialization/deserialization."""
+
+    def setUp(self):
+        self.service = WeatherService()
+        self.test_date = date.today()
+
+    def test_serialize_metar_data(self):
+        obs_time = datetime(2024, 1, 15, 10, 0, 0)
+        data = WeatherData(
+            station='KACV',
+            raw_metar='KACV 151000Z 27010G15KT 10SM FEW050 BKN100 15/10 A3012',
+            observation_time=obs_time,
+            wind=WindData(direction=270, speed=10, gust=15, direction_repr='270'),
+            visibility=10.0,
+            visibility_repr='10',
+            clouds=[
+                CloudLayer(coverage='FEW', altitude=50),
+                CloudLayer(coverage='BKN', altitude=100),
+            ],
+            temperature=15,
+            dewpoint=10,
+            flight_rules='VFR',
+        )
+
+        serialized = self.service._serialize_metar_data(data)
+
+        self.assertEqual(serialized['station'], 'KACV')
+        self.assertEqual(serialized['wind']['speed'], 10)
+        self.assertEqual(serialized['wind']['gust'], 15)
+        self.assertEqual(len(serialized['clouds']), 2)
+        self.assertEqual(serialized['clouds'][0]['coverage'], 'FEW')
+        self.assertEqual(serialized['temperature'], 15)
+
+    def test_deserialize_metar_data(self):
+        serialized = {
+            'station': 'KACV',
+            'raw_metar': 'KACV 151000Z 27010KT 10SM CLR 20/12 A3012',
+            'observation_time': '2024-01-15T10:00:00',
+            'wind': {
+                'direction': 270,
+                'speed': 10,
+                'gust': None,
+                'direction_repr': '270',
+            },
+            'visibility': 10.0,
+            'visibility_repr': '10',
+            'clouds': [{'coverage': 'CLR', 'altitude': None}],
+            'temperature': 20,
+            'dewpoint': 12,
+            'flight_rules': 'VFR',
+        }
+
+        data = self.service._deserialize_metar_data(serialized)
+
+        self.assertEqual(data.station, 'KACV')
+        self.assertEqual(data.wind.speed, 10)
+        self.assertEqual(data.temperature, 20)
+        self.assertTrue(data.from_cache)
+        self.assertEqual(data.source, WeatherSource.METAR)
+
+    def test_roundtrip_metar_serialization(self):
+        obs_time = datetime(2024, 1, 15, 10, 0, 0)
+        original = WeatherData(
+            station='KACV',
+            raw_metar='KACV 151000Z 27015G20KT 10SM SCT040 BKN080 18/12 A3010',
+            observation_time=obs_time,
+            wind=WindData(direction=270, speed=15, gust=20, direction_repr='270'),
+            visibility=10.0,
+            visibility_repr='10',
+            clouds=[CloudLayer(coverage='SCT', altitude=40)],
+            temperature=18,
+            dewpoint=12,
+            flight_rules='VFR',
+        )
+
+        serialized = self.service._serialize_metar_data(original)
+        restored = self.service._deserialize_metar_data(serialized)
+
+        self.assertEqual(restored.station, original.station)
+        self.assertEqual(restored.wind.speed, original.wind.speed)
+        self.assertEqual(restored.wind.gust, original.wind.gust)
+        self.assertEqual(restored.temperature, original.temperature)
+
+
+class TafSerializationTests(TestCase):
+    """Tests for TAF data serialization/deserialization."""
+
+    def setUp(self):
+        self.service = WeatherService()
+        self.test_date = date.today() + timedelta(days=1)
+
+    def test_serialize_taf_data(self):
+        issue_time = datetime(2024, 1, 15, 10, 0, 0)
+        period_start = datetime(2024, 1, 15, 12, 0, 0)
+        period_end = datetime(2024, 1, 16, 12, 0, 0)
+
+        period = TafForecastPeriod(
+            start_time=period_start,
+            end_time=period_end,
+            wind=WindData(direction=270, speed=10, gust=15, direction_repr='270'),
+            visibility=10.0,
+            clouds=[CloudLayer(coverage='SCT', altitude=40)],
+            flight_rules='VFR',
+            raw_line='FM151200 27010G15KT P6SM SCT040',
+        )
+
+        data = TafForecastData(
+            station='KACV',
+            raw_taf='TAF KACV 151000Z ...',
+            issue_time=issue_time,
+            target_date=self.test_date,
+            period=period,
+            wind=WindData(direction=270, speed=10, gust=15, direction_repr='270'),
+            visibility=10.0,
+            clouds=[CloudLayer(coverage='SCT', altitude=40)],
+            flight_rules='VFR',
+        )
+
+        serialized = self.service._serialize_taf_data(data)
+
+        self.assertEqual(serialized['station'], 'KACV')
+        self.assertEqual(serialized['period']['wind']['speed'], 10)
+        self.assertEqual(serialized['flight_rules'], 'VFR')
+
+    def test_deserialize_taf_data(self):
+        serialized = {
+            'station': 'KACV',
+            'raw_taf': 'TAF KACV 151000Z ...',
+            'issue_time': '2024-01-15T10:00:00',
+            'target_date': self.test_date.isoformat(),
+            'period': {
+                'start_time': '2024-01-15T12:00:00',
+                'end_time': '2024-01-16T12:00:00',
+                'wind': {
+                    'direction': 270,
+                    'speed': 12,
+                    'gust': None,
+                    'direction_repr': '270',
+                },
+                'visibility': 10.0,
+                'clouds': [{'coverage': 'BKN', 'altitude': 50}],
+                'flight_rules': 'VFR',
+                'raw_line': 'FM151200 27012KT P6SM BKN050',
+            },
+            'wind': {
+                'direction': 270,
+                'speed': 12,
+                'gust': None,
+                'direction_repr': '270',
+            },
+            'visibility': 10.0,
+            'clouds': [{'coverage': 'BKN', 'altitude': 50}],
+            'flight_rules': 'VFR',
+        }
+
+        data = self.service._deserialize_taf_data(serialized)
+
+        self.assertEqual(data.station, 'KACV')
+        self.assertEqual(data.wind.speed, 12)
+        self.assertEqual(data.period.wind.speed, 12)
+        self.assertTrue(data.from_cache)
+        self.assertEqual(data.source, WeatherSource.TAF)
+
+
+class NwsSerializationTests(TestCase):
+    """Tests for NWS data serialization/deserialization."""
+
+    def setUp(self):
+        self.service = WeatherService()
+        self.test_date = date.today() + timedelta(days=3)
+
+    def test_serialize_nws_data(self):
+        period_start = datetime(2024, 1, 18, 6, 0, 0)
+        period_end = datetime(2024, 1, 18, 18, 0, 0)
+
+        periods = [
+            NwsForecastPeriod(
+                name='Thursday',
+                start_time=period_start,
+                end_time=period_end,
+                temperature=65,
+                temperature_unit='F',
+                is_daytime=True,
+                wind_speed='10 to 15 mph',
+                wind_direction='SW',
+                short_forecast='Sunny',
+                detailed_forecast='Sunny with a high near 65.',
+                precipitation_probability=10,
+            ),
+        ]
+
+        data = NwsForecastData(
+            location=(40.9781, -124.1086),
+            target_date=self.test_date,
+            periods=periods,
+            wind=WindData(direction=225, speed=13, gust=None, direction_repr='SW'),
+            temperature_high=65,
+            temperature_low=45,
+            short_forecast='Sunny',
+            precipitation_probability=10,
+        )
+
+        serialized = self.service._serialize_nws_data(data)
+
+        self.assertEqual(serialized['location'], [40.9781, -124.1086])
+        self.assertEqual(len(serialized['periods']), 1)
+        self.assertEqual(serialized['periods'][0]['temperature'], 65)
+        self.assertEqual(serialized['wind']['speed'], 13)
+
+    def test_deserialize_nws_data(self):
+        serialized = {
+            'location': [40.9781, -124.1086],
+            'target_date': self.test_date.isoformat(),
+            'periods': [
+                {
+                    'name': 'Friday',
+                    'start_time': '2024-01-19T06:00:00',
+                    'end_time': '2024-01-19T18:00:00',
+                    'temperature': 60,
+                    'temperature_unit': 'F',
+                    'is_daytime': True,
+                    'wind_speed': '5 to 10 mph',
+                    'wind_direction': 'NW',
+                    'short_forecast': 'Mostly Sunny',
+                    'detailed_forecast': 'Mostly sunny with a high near 60.',
+                    'precipitation_probability': 5,
+                },
+            ],
+            'wind': {
+                'direction': 315,
+                'speed': 9,
+                'gust': None,
+                'direction_repr': 'NW',
+            },
+            'temperature_high': 60,
+            'temperature_low': 42,
+            'short_forecast': 'Mostly Sunny',
+            'precipitation_probability': 5,
+        }
+
+        data = self.service._deserialize_nws_data(serialized)
+
+        self.assertEqual(data.location, (40.9781, -124.1086))
+        self.assertEqual(data.wind.speed, 9)
+        self.assertEqual(len(data.periods), 1)
+        self.assertEqual(data.periods[0].temperature, 60)
+        self.assertTrue(data.from_cache)
+        self.assertEqual(data.source, WeatherSource.NWS)
+
+
+class RateLimitDBCountTests(TestCase):
+    """Tests for DB-based rate limit counting."""
+
+    def setUp(self):
+        WeatherRecord.objects.all().delete()
+        self.service = WeatherService()
+
+    def test_check_rate_limit_with_no_records(self):
+        """Should return True when no records exist."""
+        result = self.service._check_rate_limit()
+        self.assertTrue(result)
+
+    def test_check_rate_limit_counts_openmeteo_types(self):
+        """Should count openmeteo, hourly, and historical records."""
+        # Create records for Open-Meteo API types
+        for weather_type in ['openmeteo', 'hourly', 'historical']:
+            WeatherRecord.objects.create(
+                weather_type=weather_type,
+                target_date=date.today(),
+                latitude=Decimal('40.9781'),
+                longitude=Decimal('-124.1086'),
+                data={'test': 'data'},
+            )
+
+        # With 3 records, should still be under limit
+        result = self.service._check_rate_limit()
+        self.assertTrue(result)
+
+    def test_check_rate_limit_ignores_non_openmeteo_types(self):
+        """Should not count METAR, TAF, or NWS records."""
+        # Create many non-Open-Meteo records
+        for i in range(100):
+            WeatherRecord.objects.create(
+                weather_type='metar',
+                target_date=date.today(),
+                station='KACV',
+                data={'test': f'data_{i}'},
+            )
+
+        # Should still return True since these don't count
+        result = self.service._check_rate_limit()
+        self.assertTrue(result)
