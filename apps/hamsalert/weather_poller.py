@@ -34,8 +34,8 @@ OPENMETEO_INTERVAL = 14400 # 4 hours
 # Delay between API calls to avoid rate limiting (seconds)
 API_CALL_DELAY = 2
 
-# Backoff time when rate limited (seconds)
-RATE_LIMIT_BACKOFF = 120
+# Backoff time when rate limited (seconds) - 10 minutes to let Open-Meteo cool down
+RATE_LIMIT_BACKOFF = 600
 
 
 class WeatherPoller:
@@ -74,11 +74,16 @@ class WeatherPoller:
             time.sleep(60)  # Check every minute
 
     def _poll_all_sources(self):
-        """Poll all sources immediately (used on startup)."""
+        """Poll all sources immediately (used on startup), skipping if fresh data exists."""
+        local_today = datetime.now(self.local_timezone).date()
         for source in ['metar', 'taf', 'nws', 'openmeteo']:
             if self._is_rate_limited():
                 logger.info("WeatherPoller: Rate limited, stopping initial poll")
                 break
+            # Skip if we already have fresh data (avoids hitting rate limits on restart)
+            if self._has_fresh_data(source, local_today):
+                self.last_poll[source] = time.time()
+                continue
             self._poll_source(source)
             self.last_poll[source] = time.time()
 
@@ -97,6 +102,50 @@ class WeatherPoller:
         """Set rate limit backoff."""
         self._rate_limited_until = time.time() + RATE_LIMIT_BACKOFF
         logger.warning(f"WeatherPoller: Rate limited, backing off for {RATE_LIMIT_BACKOFF}s")
+
+    def _has_fresh_data(self, source: str, local_today: date) -> bool:
+        """Check if DB already has fresh data for this source."""
+        from apps.hamsalert.models import WeatherRecord
+        from django.utils import timezone
+
+        # Map source to weather_type and TTL
+        ttl_map = {
+            'metar': ('metar', METAR_INTERVAL),
+            'taf': ('taf', TAF_INTERVAL),
+            'nws': ('nws', NWS_INTERVAL),
+            'openmeteo': ('openmeteo', OPENMETEO_INTERVAL),
+        }
+        weather_type, ttl = ttl_map.get(source, (source, 3600))
+
+        # Check if we have a record within the TTL
+        cutoff = timezone.now() - timedelta(seconds=ttl)
+
+        # For openmeteo, check BOTH daily and hourly (need both to skip)
+        if source == 'openmeteo':
+            has_daily = WeatherRecord.objects.filter(
+                weather_type='openmeteo',
+                target_date=local_today,
+                fetched_at__gte=cutoff,
+            ).exists()
+            has_hourly = WeatherRecord.objects.filter(
+                weather_type='hourly',
+                target_date=local_today,
+                fetched_at__gte=cutoff,
+            ).exists()
+            if has_daily and has_hourly:
+                logger.debug(f"WeatherPoller: Fresh openmeteo+hourly data exists, skipping poll")
+                return True
+            return False
+
+        exists = WeatherRecord.objects.filter(
+            weather_type=weather_type,
+            target_date=local_today,
+            fetched_at__gte=cutoff,
+        ).exists()
+
+        if exists:
+            logger.debug(f"WeatherPoller: Fresh {source} data exists, skipping poll")
+        return exists
 
     def _poll_source(self, source: str):
         """Fetch and store data for all applicable days."""
