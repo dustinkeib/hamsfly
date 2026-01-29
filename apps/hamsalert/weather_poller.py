@@ -85,14 +85,18 @@ class WeatherPoller:
                 self.last_poll[source] = time.time()
                 continue
             self._poll_source(source)
-            self.last_poll[source] = time.time()
+            # Only mark as polled if we didn't get rate limited during the poll
+            if not self._is_rate_limited():
+                self.last_poll[source] = time.time()
 
     def _poll_if_due(self, source: str, interval: int):
         """Poll if interval elapsed since last poll."""
         now = time.time()
         if self.last_poll[source] is None or (now - self.last_poll[source]) >= interval:
             self._poll_source(source)
-            self.last_poll[source] = now
+            # Only mark as polled if we didn't get rate limited during the poll
+            if not self._is_rate_limited():
+                self.last_poll[source] = now
 
     def _is_rate_limited(self) -> bool:
         """Check if we're currently in a rate limit backoff period."""
