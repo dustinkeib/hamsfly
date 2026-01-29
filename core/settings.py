@@ -157,6 +157,12 @@ OPENMETEO_MAX_RETRIES = 3
 OPENMETEO_BASE_DELAY = 1.0  # seconds
 OPENMETEO_MAX_DELAY = 30.0  # seconds
 
+# Open-Meteo Global Rate Limits (proactive throttling)
+OPENMETEO_RATE_LIMIT_PER_MINUTE = 600
+OPENMETEO_RATE_LIMIT_PER_HOUR = 5000
+OPENMETEO_RATE_LIMIT_PER_DAY = 10000
+OPENMETEO_RATE_LIMIT_SAFETY_MARGIN = 0.9  # Stop at 90% of limit
+
 # Weather DB Storage
 WEATHER_DB_CLEANUP_DAYS = 30  # Delete records older than this
 

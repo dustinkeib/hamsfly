@@ -866,6 +866,11 @@ class WeatherServiceError(Exception):
     pass
 
 
+class RateLimitError(WeatherServiceError):
+    """Raised when proactive rate limiting prevents an API call."""
+    pass
+
+
 class WeatherService:
     """Service for fetching and caching weather data from multiple sources."""
 
@@ -875,6 +880,11 @@ class WeatherService:
     MAX_RETRIES = 3
     BASE_DELAY = 1.0
     MAX_DELAY = 30.0
+
+    # Rate limit counter cache keys
+    RATE_LIMIT_MINUTE_KEY = 'openmeteo_rate_minute'
+    RATE_LIMIT_HOUR_KEY = 'openmeteo_rate_hour'
+    RATE_LIMIT_DAY_KEY = 'openmeteo_rate_day'
 
     def __init__(self):
         self.api_token = getattr(settings, 'AVWX_API_TOKEN', '')
@@ -896,6 +906,12 @@ class WeatherService:
         self.base_delay = getattr(settings, 'OPENMETEO_BASE_DELAY', self.BASE_DELAY)
         self.max_delay = getattr(settings, 'OPENMETEO_MAX_DELAY', self.MAX_DELAY)
 
+        # Global rate limit settings
+        self.rate_limit_per_minute = getattr(settings, 'OPENMETEO_RATE_LIMIT_PER_MINUTE', 600)
+        self.rate_limit_per_hour = getattr(settings, 'OPENMETEO_RATE_LIMIT_PER_HOUR', 5000)
+        self.rate_limit_per_day = getattr(settings, 'OPENMETEO_RATE_LIMIT_PER_DAY', 10000)
+        self.rate_limit_safety_margin = getattr(settings, 'OPENMETEO_RATE_LIMIT_SAFETY_MARGIN', 0.9)
+
     def _make_request_with_retry(
         self,
         url: str,
@@ -905,6 +921,9 @@ class WeatherService:
     ) -> httpx.Response:
         """
         Make HTTP GET request with exponential backoff retry on 429/timeout errors.
+
+        For Open-Meteo URLs, also checks proactive rate limits before requesting
+        and increments counters after successful responses.
 
         Args:
             url: The URL to request
@@ -916,8 +935,16 @@ class WeatherService:
             httpx.Response on success
 
         Raises:
+            RateLimitError if proactive rate limit threshold reached (Open-Meteo only)
             WeatherServiceError on failure after retries
         """
+        # Check if this is an Open-Meteo request
+        is_openmeteo = 'open-meteo.com' in url
+
+        # Proactive rate limit check for Open-Meteo
+        if is_openmeteo and not self._check_rate_limit():
+            raise RateLimitError("Open-Meteo rate limit threshold reached")
+
         last_exception: Optional[Exception] = None
 
         for attempt in range(self.max_retries + 1):
@@ -945,6 +972,10 @@ class WeatherService:
                             continue
 
                         raise WeatherServiceError("API rate limit exceeded after retries")
+
+                    # Increment rate counters on successful Open-Meteo response
+                    if is_openmeteo:
+                        self._increment_rate_counters()
 
                     return response
 
@@ -991,6 +1022,60 @@ class WeatherService:
         base = self.base_delay * (2 ** attempt)
         jitter = random.uniform(0, self.base_delay)
         return min(base + jitter, self.max_delay)
+
+    def _check_rate_limit(self) -> bool:
+        """
+        Check if we're under the Open-Meteo rate limits.
+
+        Returns:
+            True if under limits (OK to proceed), False if at/over threshold.
+        """
+        minute_count = cache.get(self.RATE_LIMIT_MINUTE_KEY, 0)
+        hour_count = cache.get(self.RATE_LIMIT_HOUR_KEY, 0)
+        day_count = cache.get(self.RATE_LIMIT_DAY_KEY, 0)
+
+        minute_threshold = int(self.rate_limit_per_minute * self.rate_limit_safety_margin)
+        hour_threshold = int(self.rate_limit_per_hour * self.rate_limit_safety_margin)
+        day_threshold = int(self.rate_limit_per_day * self.rate_limit_safety_margin)
+
+        if minute_count >= minute_threshold:
+            logger.warning(
+                f"Rate limit approaching: {minute_count}/{self.rate_limit_per_minute} per minute"
+            )
+            return False
+        if hour_count >= hour_threshold:
+            logger.warning(
+                f"Rate limit approaching: {hour_count}/{self.rate_limit_per_hour} per hour"
+            )
+            return False
+        if day_count >= day_threshold:
+            logger.warning(
+                f"Rate limit approaching: {day_count}/{self.rate_limit_per_day} per day"
+            )
+            return False
+
+        return True
+
+    def _increment_rate_counters(self) -> None:
+        """
+        Increment all three rate limit counters after a successful API request.
+
+        Uses cache.get/set with TTLs to auto-expire counters:
+        - Minute counter: 60s TTL
+        - Hour counter: 3600s TTL
+        - Day counter: 86400s TTL
+        """
+        # Minute counter (60s TTL)
+        minute_count = cache.get(self.RATE_LIMIT_MINUTE_KEY, 0)
+        cache.set(self.RATE_LIMIT_MINUTE_KEY, minute_count + 1, 60)
+
+        # Hour counter (3600s TTL)
+        hour_count = cache.get(self.RATE_LIMIT_HOUR_KEY, 0)
+        cache.set(self.RATE_LIMIT_HOUR_KEY, hour_count + 1, 3600)
+
+        # Day counter (86400s TTL)
+        day_count = cache.get(self.RATE_LIMIT_DAY_KEY, 0)
+        cache.set(self.RATE_LIMIT_DAY_KEY, day_count + 1, 86400)
 
     def _get_from_db(
         self,

@@ -14,6 +14,7 @@ from apps.hamsalert.services.weather import (
     HourlyForecastEntry,
     HistoricalWeatherData,
     OpenMeteoForecastData,
+    RateLimitError,
     WeatherService,
     WeatherServiceError,
     WindData,
@@ -402,6 +403,35 @@ class TwoTierCacheIntegrationTests(TestCase):
 
         with self.assertRaises(WeatherServiceError):
             self.service._get_openmeteo_forecast(self.test_date)
+
+    @patch.object(WeatherService, '_fetch_openmeteo_forecast')
+    def test_rate_limit_error_triggers_stale_fallback(self, mock_fetch):
+        """RateLimitError causes _get_openmeteo_forecast to return stale DB data."""
+        # Store stale data in DB
+        stale_data = {
+            'location': [self.lat, self.lon],
+            'target_date': self.test_date.isoformat(),
+            'wind': {'direction': 270, 'speed': 15, 'gust': 20, 'direction_repr': '270'},
+            'temperature_high': 22,
+            'temperature_low': 14,
+            'precipitation_probability': 25,
+        }
+        self.service._save_to_db('openmeteo', self.test_date, stale_data, lat=self.lat, lon=self.lon)
+
+        # Age the record beyond TTL
+        WeatherRecord.objects.filter(weather_type='openmeteo').update(
+            fetched_at=timezone.now() - timedelta(hours=10)
+        )
+
+        # Simulate rate limit hit
+        mock_fetch.side_effect = RateLimitError("Open-Meteo rate limit threshold reached")
+
+        result = self.service._get_openmeteo_forecast(self.test_date)
+
+        # Should fall back to stale data
+        self.assertEqual(result.wind.speed, 15)
+        self.assertEqual(result.wind.gust, 20)
+        self.assertTrue(result.from_cache)
 
 
 class WeatherRecordModelTests(TestCase):
