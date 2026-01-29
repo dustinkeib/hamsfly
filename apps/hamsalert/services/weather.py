@@ -1142,15 +1142,14 @@ class WeatherService:
         from apps.hamsalert.models import WeatherRecord
 
         try:
+            # Build lookup - always include all fields to match unique constraint
             lookup = {
                 'weather_type': weather_type,
                 'target_date': target_date,
                 'station': station or '',
+                'latitude': Decimal(str(lat)) if lat is not None else None,
+                'longitude': Decimal(str(lon)) if lon is not None else None,
             }
-            # Add lat/lon to lookup if provided (for coordinate-based records)
-            if lat is not None and lon is not None:
-                lookup['latitude'] = Decimal(str(lat))
-                lookup['longitude'] = Decimal(str(lon))
 
             defaults = {
                 'data': data,
@@ -1158,7 +1157,25 @@ class WeatherService:
                 'api_response_time_ms': api_response_time_ms,
             }
 
-            WeatherRecord.objects.update_or_create(defaults=defaults, **lookup)
+            # For records with NULL lat/lon, update_or_create won't match due to NULL != NULL
+            # So we need to manually check for existing records first
+            if lat is None and lon is None:
+                existing = WeatherRecord.objects.filter(
+                    weather_type=weather_type,
+                    target_date=target_date,
+                    station=station or '',
+                    latitude__isnull=True,
+                    longitude__isnull=True,
+                ).first()
+                if existing:
+                    for key, value in defaults.items():
+                        setattr(existing, key, value)
+                    existing.save()
+                else:
+                    WeatherRecord.objects.create(**lookup, **defaults)
+            else:
+                WeatherRecord.objects.update_or_create(defaults=defaults, **lookup)
+
             logger.debug(f"Saved {weather_type} to DB for {target_date}")
         except Exception as e:
             logger.warning(f"Failed to save weather to DB: {e}")
