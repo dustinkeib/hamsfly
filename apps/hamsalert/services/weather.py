@@ -2694,3 +2694,180 @@ class WeatherService:
     def is_configured(self) -> bool:
         """Check if the weather service is properly configured."""
         return bool(self.api_token)
+
+    # -------------------------------------------------------------------------
+    # Batch fetch methods for background poller (single API call for all days)
+    # -------------------------------------------------------------------------
+
+    def fetch_openmeteo_batch(self, local_today: date) -> list[tuple[date, OpenMeteoForecastData]]:
+        """
+        Fetch daily forecast from Open-Meteo for 16 days in ONE API call.
+        Returns list of (target_date, data) tuples for each day.
+        """
+        lat, lon = self.nws_location
+
+        params = {
+            'latitude': lat,
+            'longitude': lon,
+            'daily': ','.join([
+                'temperature_2m_max',
+                'temperature_2m_min',
+                'precipitation_probability_max',
+                'wind_speed_10m_max',
+                'wind_gusts_10m_max',
+                'wind_direction_10m_dominant',
+            ]),
+            'timezone': 'auto',
+            'forecast_days': 16,
+        }
+
+        response = self._make_request_with_retry(
+            'https://api.open-meteo.com/v1/forecast',
+            params=params,
+        )
+
+        if response.status_code != 200:
+            logger.warning(f"Open-Meteo API error: {response.status_code}")
+            raise WeatherServiceError(f"Open-Meteo API error: {response.status_code}")
+
+        return self._parse_openmeteo_batch_response(response.json())
+
+    def _parse_openmeteo_batch_response(self, data: dict) -> list[tuple[date, OpenMeteoForecastData]]:
+        """Parse Open-Meteo API response and return all 16 days."""
+        results = []
+        try:
+            daily = data.get('daily', {})
+            dates = daily.get('time', [])
+
+            for idx, date_str in enumerate(dates):
+                try:
+                    target_date = date.fromisoformat(date_str)
+                except ValueError:
+                    continue
+
+                temp_max = daily.get('temperature_2m_max', [])[idx]
+                temp_min = daily.get('temperature_2m_min', [])[idx]
+                precip_prob = daily.get('precipitation_probability_max', [])[idx]
+                wind_speed_kmh = daily.get('wind_speed_10m_max', [])[idx] or 0
+                wind_gust_kmh = daily.get('wind_gusts_10m_max', [])[idx]
+                wind_dir = daily.get('wind_direction_10m_dominant', [])[idx]
+
+                # Convert km/h to knots (1 km/h = 0.54 knots)
+                wind_speed_kt = round(wind_speed_kmh * 0.54)
+                wind_gust_kt = round(wind_gust_kmh * 0.54) if wind_gust_kmh else None
+
+                wind = WindData(
+                    direction=wind_dir,
+                    speed=wind_speed_kt,
+                    gust=wind_gust_kt,
+                    direction_repr=str(wind_dir) if wind_dir else 'VRB',
+                )
+
+                forecast = OpenMeteoForecastData(
+                    location=self.nws_location,
+                    target_date=target_date,
+                    wind=wind,
+                    temperature_high=round(temp_max) if temp_max is not None else None,
+                    temperature_low=round(temp_min) if temp_min is not None else None,
+                    precipitation_probability=precip_prob,
+                    cached_at=timezone.now(),
+                    source=WeatherSource.OPENMETEO,
+                )
+                results.append((target_date, forecast))
+
+        except (KeyError, TypeError, IndexError) as e:
+            logger.error(f"Failed to parse Open-Meteo batch response: {e}")
+            raise WeatherServiceError(f"Failed to parse Open-Meteo data: {e}")
+
+        return results
+
+    def fetch_hourly_batch(self, local_today: date, days: int = 16) -> list[tuple[date, 'HourlyForecastData']]:
+        """
+        Fetch hourly forecast from Open-Meteo for multiple days in ONE API call.
+        Returns list of (target_date, data) tuples for each day.
+        """
+        lat, lon = self.nws_location
+        start_date = local_today
+        end_date = local_today + timedelta(days=days - 1)
+
+        params = {
+            'latitude': lat,
+            'longitude': lon,
+            'hourly': ','.join([
+                'temperature_2m',
+                'wind_speed_10m',
+                'wind_direction_10m',
+                'wind_gusts_10m',
+                'precipitation_probability',
+                'weather_code',
+            ]),
+            'timezone': 'auto',
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+        }
+
+        response = self._make_request_with_retry(
+            'https://api.open-meteo.com/v1/forecast',
+            params=params,
+        )
+
+        if response.status_code != 200:
+            logger.warning(f"Open-Meteo hourly API error: {response.status_code}")
+            raise WeatherServiceError(f"Open-Meteo API error: {response.status_code}")
+
+        return self._parse_hourly_batch_response(response.json())
+
+    def _parse_hourly_batch_response(self, data: dict) -> list[tuple[date, 'HourlyForecastData']]:
+        """Parse Open-Meteo hourly API response and return all days."""
+        try:
+            hourly = data.get('hourly', {})
+            times = hourly.get('time', [])
+
+            if not times:
+                return []
+
+            temps = hourly.get('temperature_2m', [])
+            wind_speeds = hourly.get('wind_speed_10m', [])
+            wind_dirs = hourly.get('wind_direction_10m', [])
+            wind_gusts = hourly.get('wind_gusts_10m', [])
+            precip_probs = hourly.get('precipitation_probability', [])
+            weather_codes = hourly.get('weather_code', [])
+
+            # Group hours by date
+            hours_by_date: dict[date, list[HourlyForecastEntry]] = {}
+            for i, time_str in enumerate(times):
+                try:
+                    hour_time = datetime.fromisoformat(time_str)
+                    target_date = hour_time.date()
+                except (ValueError, AttributeError):
+                    continue
+
+                if target_date not in hours_by_date:
+                    hours_by_date[target_date] = []
+
+                hours_by_date[target_date].append(HourlyForecastEntry(
+                    time=hour_time,
+                    temperature_c=temps[i] if i < len(temps) else None,
+                    wind_speed_kmh=wind_speeds[i] if i < len(wind_speeds) else None,
+                    wind_direction=wind_dirs[i] if i < len(wind_dirs) else None,
+                    wind_gusts_kmh=wind_gusts[i] if i < len(wind_gusts) else None,
+                    precipitation_probability=precip_probs[i] if i < len(precip_probs) else None,
+                    weather_code=weather_codes[i] if i < len(weather_codes) else None,
+                ))
+
+            # Build results
+            results = []
+            for target_date, hours in sorted(hours_by_date.items()):
+                forecast = HourlyForecastData(
+                    location=self.nws_location,
+                    target_date=target_date,
+                    hours=hours,
+                    cached_at=timezone.now(),
+                )
+                results.append((target_date, forecast))
+
+            return results
+
+        except (KeyError, TypeError, IndexError) as e:
+            logger.error(f"Failed to parse hourly batch response: {e}")
+            raise WeatherServiceError(f"Failed to parse hourly data: {e}")

@@ -61,22 +61,33 @@ class WeatherPollerTests(TestCase):
         self.assertEqual(mock_service._save_to_db.call_count, 6)
 
     def test_poll_openmeteo_saves_daily_and_hourly(self):
-        """OpenMeteo poll should save daily and hourly data for days 0-15."""
+        """OpenMeteo poll should use batch fetch for daily and hourly data."""
         poller = WeatherPoller()
         mock_service = MagicMock()
         mock_service.nws_location = (40.9781, -124.1086)
-        mock_service._fetch_openmeteo_forecast.return_value = MagicMock()
-        mock_service._fetch_hourly_forecast.return_value = MagicMock()
+
+        # Batch methods return list of (date, data) tuples
+        today = date.today()
+        mock_daily_results = [
+            (today + timedelta(days=i), MagicMock())
+            for i in range(16)
+        ]
+        mock_hourly_results = [
+            (today + timedelta(days=i), MagicMock())
+            for i in range(16)
+        ]
+        mock_service.fetch_openmeteo_batch.return_value = mock_daily_results
+        mock_service.fetch_hourly_batch.return_value = mock_hourly_results
         mock_service._serialize_openmeteo_data.return_value = {'test': 'data'}
         mock_service._serialize_hourly_data.return_value = {'test': 'hourly'}
         poller.service = mock_service
 
-        poller._poll_openmeteo(date.today())
+        poller._poll_openmeteo(today)
 
-        # Should be called 16 times each (days 0-15)
-        self.assertEqual(mock_service._fetch_openmeteo_forecast.call_count, 16)
-        self.assertEqual(mock_service._fetch_hourly_forecast.call_count, 16)
-        # Save called twice per day (daily + hourly)
+        # Batch methods should be called once each (not 16 times)
+        mock_service.fetch_openmeteo_batch.assert_called_once_with(today)
+        mock_service.fetch_hourly_batch.assert_called_once_with(today, days=16)
+        # Save called twice per day (daily + hourly) = 32 total
         self.assertEqual(mock_service._save_to_db.call_count, 32)
 
     def test_poll_source_handles_api_error(self):

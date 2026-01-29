@@ -175,59 +175,49 @@ class WeatherPoller:
         logger.info("WeatherPoller: NWS updated")
 
     def _poll_openmeteo(self, local_today: date):
-        """Poll OpenMeteo for days 0-15, including hourly data."""
-        logger.info("WeatherPoller: Polling OpenMeteo")
+        """Poll OpenMeteo for days 0-15, including hourly data (2 API calls total)."""
+        logger.info("WeatherPoller: Polling OpenMeteo (batch)")
         lat, lon = self.service.nws_location
 
-        # Daily forecast for days 0-15
-        for days_out in range(16):  # Days 0-15
-            if self._is_rate_limited():
-                logger.info("WeatherPoller: Rate limited, stopping OpenMeteo poll")
+        # Daily forecast for days 0-15 (ONE API call)
+        try:
+            results = self.service.fetch_openmeteo_batch(local_today)
+            for target_date, data in results:
+                self.service._save_to_db(
+                    'openmeteo',
+                    target_date,
+                    self.service._serialize_openmeteo_data(data),
+                    lat=lat,
+                    lon=lon,
+                )
+            logger.info(f"WeatherPoller: OpenMeteo daily updated ({len(results)} days)")
+        except Exception as e:
+            error_str = str(e).lower()
+            if 'rate limit' in error_str or '429' in error_str:
+                self._set_rate_limited()
                 return
-            target_date = local_today + timedelta(days=days_out)
-            try:
-                data = self.service._fetch_openmeteo_forecast(target_date)
-                if data:
-                    self.service._save_to_db(
-                        'openmeteo',
-                        target_date,
-                        self.service._serialize_openmeteo_data(data),
-                        lat=lat,
-                        lon=lon,
-                    )
-                    logger.debug(f"WeatherPoller: OpenMeteo updated for {target_date}")
-            except Exception as e:
-                error_str = str(e).lower()
-                if 'rate limit' in error_str or '429' in error_str:
-                    self._set_rate_limited()
-                    return
-                logger.warning(f"WeatherPoller: OpenMeteo poll failed for {target_date}: {e}")
-            time.sleep(API_CALL_DELAY)
+            logger.warning(f"WeatherPoller: OpenMeteo daily poll failed: {e}")
 
-        # Hourly forecast for days 0-15
-        for days_out in range(16):  # Days 0-15
-            if self._is_rate_limited():
-                logger.info("WeatherPoller: Rate limited, stopping hourly poll")
+        time.sleep(API_CALL_DELAY)
+
+        # Hourly forecast for days 0-15 (ONE API call)
+        try:
+            results = self.service.fetch_hourly_batch(local_today, days=16)
+            for target_date, data in results:
+                self.service._save_to_db(
+                    'hourly',
+                    target_date,
+                    self.service._serialize_hourly_data(data),
+                    lat=lat,
+                    lon=lon,
+                )
+            logger.info(f"WeatherPoller: OpenMeteo hourly updated ({len(results)} days)")
+        except Exception as e:
+            error_str = str(e).lower()
+            if 'rate limit' in error_str or '429' in error_str:
+                self._set_rate_limited()
                 return
-            target_date = local_today + timedelta(days=days_out)
-            try:
-                data = self.service._fetch_hourly_forecast(target_date)
-                if data:
-                    self.service._save_to_db(
-                        'hourly',
-                        target_date,
-                        self.service._serialize_hourly_data(data),
-                        lat=lat,
-                        lon=lon,
-                    )
-                    logger.debug(f"WeatherPoller: Hourly updated for {target_date}")
-            except Exception as e:
-                error_str = str(e).lower()
-                if 'rate limit' in error_str or '429' in error_str:
-                    self._set_rate_limited()
-                    return
-                logger.warning(f"WeatherPoller: Hourly poll failed for {target_date}: {e}")
-            time.sleep(API_CALL_DELAY)
+            logger.warning(f"WeatherPoller: Hourly poll failed: {e}")
 
         logger.info("WeatherPoller: OpenMeteo updated")
 
