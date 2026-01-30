@@ -9,12 +9,12 @@
         <div class="card-body">
             <!-- Month Navigation -->
             <div class="flex items-center justify-between mb-4">
-                <a href="{% url 'calendar_day' prev_year prev_month 1 %}" class="btn btn-ghost btn-sm">&lt; Prev</a>
+                <a href="{% url 'calendar_month' prev_year prev_month %}" class="btn btn-ghost btn-sm">&lt; Prev</a>
                 <div class="flex items-center gap-2">
                     <h2 class="card-title text-2xl"><span class="sm:hidden">{{ month_name|slice:":3" }}</span><span class="hidden sm:inline">{{ month_name }}</span> {{ year }}</h2>
                     <a href="{% url 'calendar' %}" class="btn btn-success btn-xs"><span class="sm:hidden">Today &gt;</span><span class="hidden sm:inline">Go to Today</span></a>
                 </div>
-                <a href="{% url 'calendar_day' next_year next_month 1 %}" class="btn btn-ghost btn-sm">Next &gt;</a>
+                <a href="{% url 'calendar_month' next_year next_month %}" class="btn btn-ghost btn-sm">Next &gt;</a>
             </div>
 
             <!-- Calendar Grid -->

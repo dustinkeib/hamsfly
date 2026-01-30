@@ -60,6 +60,24 @@ def calendar_view(request):
     return redirect('calendar_day', year=today.year, month=today.month, day=today.day)
 
 
+def calendar_month_view(request, year, month):
+    """Redirect to the appropriate day for this month based on session."""
+    today = date.today()
+
+    # Look up session for this month's saved day
+    session_key = f'calendar_{year}_{month}'
+    saved_day = request.session.get(session_key)
+
+    if saved_day:
+        day = saved_day
+    elif year == today.year and month == today.month:
+        day = today.day
+    else:
+        day = 1
+
+    return redirect('calendar_day', year=year, month=month, day=day)
+
+
 def calendar_day_view(request, year, month, day):
     """Display calendar with the selected day's events and weather."""
     today = date.today()
@@ -69,6 +87,10 @@ def calendar_day_view(request, year, month, day):
         selected_date = date(year, month, day)
     except ValueError:
         return redirect('calendar_day', year=today.year, month=today.month, day=today.day)
+
+    # Save this day selection to session
+    session_key = f'calendar_{year}_{month}'
+    request.session[session_key] = day
 
     # Get calendar data
     cal = calendar.Calendar(firstweekday=6)  # Sunday first
