@@ -83,3 +83,25 @@ class WeatherRecord(models.Model):
     def __str__(self):
         location = self.station or f"{self.latitude},{self.longitude}"
         return f"{self.get_weather_type_display()} - {self.target_date} @ {location}"
+
+
+class FlyingIntent(models.Model):
+    """
+    Tracks anonymous users who indicate they plan to fly on a given date.
+    Uses session_key for anonymous tracking (no auth required).
+    """
+
+    date = models.DateField(db_index=True)
+    session_key = models.CharField(max_length=40, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['date', 'session_key'],
+                name='unique_flying_intent_per_session_date',
+            ),
+        ]
+
+    def __str__(self):
+        return f"Flying intent for {self.date} (session: {self.session_key[:8]}...)"

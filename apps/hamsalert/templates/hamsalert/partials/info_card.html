@@ -1,6 +1,15 @@
-<h3 class="font-semibold mb-3">{{ date|date:"F j, Y" }}</h3>
+<!-- Date Header Row -->
+<div class="flex items-center justify-between mb-4">
+    <!-- Date (3/4 width) -->
+    <h3 class="font-bold text-lg flex-grow">{{ date|date:"F j, Y" }}</h3>
 
-<!-- Events -->
+    <!-- Flying Button (1/4 width) -->
+    <div id="flying-button-container">
+        {% include "hamsalert/partials/flying_button.html" %}
+    </div>
+</div>
+
+<!-- Events Section -->
 {% if events %}
     <div class="space-y-3 mb-4">
         {% for event in events %}
@@ -15,19 +24,20 @@
         {% endfor %}
     </div>
 {% else %}
+    <!-- "No events - Let's fly!" or simple message -->
     {% if weather and weather.rc_flying_assessment.rating == 'good' and not weather.historical %}
         <div class="flex items-center justify-center gap-2 rounded-lg bg-success text-success-content px-3 py-1.5 mb-4 font-semibold">
             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            No events! Let's fly!
+            No events - Let's fly!
         </div>
     {% else %}
         <p class="text-base-content/60 mb-4">No events on this day</p>
     {% endif %}
 {% endif %}
 
-<!-- Weather Card -->
+<!-- Weather Section -->
 <div id="weather-container">
     {% include "hamsalert/partials/weather_card.html" %}
 </div>

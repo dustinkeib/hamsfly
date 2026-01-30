@@ -8,7 +8,10 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 from zoneinfo import ZoneInfo
 
-from .models import Event
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.http import require_POST
+
+from .models import Event, FlyingIntent
 from .services import CompositeWeatherData, WeatherService, WeatherSource
 
 
@@ -20,6 +23,21 @@ WEATHER_CACHE_TTLS = {
     WeatherSource.EXTENDED: 14400, # 4 hours
     WeatherSource.HISTORICAL: 86400, # 24 hours
 }
+
+
+def get_flying_info(request, target_date):
+    """Get flying intent count and whether current session has marked flying."""
+    if not request.session.session_key:
+        request.session.create()
+
+    session_key = request.session.session_key
+    count = FlyingIntent.objects.filter(date=target_date).count()
+    is_flying = FlyingIntent.objects.filter(
+        date=target_date,
+        session_key=session_key,
+    ).exists()
+
+    return {'count': count, 'is_flying': is_flying}
 
 
 def get_refresh_info(weather) -> dict:
@@ -78,6 +96,7 @@ def calendar_month_view(request, year, month):
     return redirect('calendar_day', year=year, month=month, day=day)
 
 
+@ensure_csrf_cookie
 def calendar_day_view(request, year, month, day):
     """Display calendar with the selected day's events and weather."""
     today = date.today()
@@ -131,12 +150,13 @@ def calendar_day_view(request, year, month, day):
         if not weather or not weather.sources:
             weather = None
             days_out = (selected_date - today).days
-            if days_out > 15:
-                weather_error = "No forecast beyond 16 days"
+            if days_out > 14:
+                weather_error = "No forecast beyond 15 days"
             elif days_out >= 0:
                 weather_error = "Weather data not yet available"
 
     refresh = get_refresh_info(weather)
+    flying_info = get_flying_info(request, selected_date)
 
     context = {
         'year': year,
@@ -161,6 +181,9 @@ def calendar_day_view(request, year, month, day):
         'weather_configured': weather_service.is_configured(),
         'refresh_seconds': refresh['seconds'],
         'refresh_minutes': refresh['minutes'],
+        # Flying intent
+        'flying_count': flying_info['count'],
+        'is_flying': flying_info['is_flying'],
     }
     return render(request, 'hamsalert/calendar.html', context)
 
@@ -191,8 +214,8 @@ def weather_refresh(request):
         if not weather or not weather.sources:
             weather = None
             days_out = (target_date - date.today()).days
-            if days_out > 15:
-                weather_error = "No forecast beyond 16 days"
+            if days_out > 14:
+                weather_error = "No forecast beyond 15 days"
             elif days_out >= 0:
                 weather_error = "Weather data not yet available"
 
@@ -223,9 +246,9 @@ def hourly_forecast(request, year, month, day):
     local_today = datetime.now(local_tz).date()
     days_out = (target_date - local_today).days
 
-    if days_out < 0 or days_out > 15:
+    if days_out < 0 or days_out > 14:
         return render(request, 'hamsalert/hourly_forecast.html', {
-            'error': 'Hourly forecast is only available for today through 15 days out.',
+            'error': 'Hourly forecast is only available for today through 14 days out.',
             'target_date': target_date,
         })
 
@@ -247,3 +270,39 @@ def hourly_forecast(request, year, month, day):
         'now_time': now_time,
     }
     return render(request, 'hamsalert/hourly_forecast.html', context)
+
+
+@require_POST
+def toggle_flying_intent(request):
+    """HTMX endpoint to toggle flying intent for a date."""
+    year = request.POST.get('year')
+    month = request.POST.get('month')
+    day = request.POST.get('day')
+
+    try:
+        target_date = date(int(year), int(month), int(day))
+    except (ValueError, TypeError):
+        target_date = date.today()
+
+    # Ensure session exists
+    if not request.session.session_key:
+        request.session.create()
+
+    session_key = request.session.session_key
+
+    # Toggle: delete if exists, create if not
+    intent, created = FlyingIntent.objects.get_or_create(
+        date=target_date,
+        session_key=session_key,
+    )
+    if not created:
+        intent.delete()
+
+    flying_info = get_flying_info(request, target_date)
+
+    context = {
+        'date': target_date,
+        'flying_count': flying_info['count'],
+        'is_flying': flying_info['is_flying'],
+    }
+    return render(request, 'hamsalert/partials/flying_button.html', context)

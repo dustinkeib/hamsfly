@@ -8,4 +8,5 @@ urlpatterns = [
     path('health/', views.health, name='health'),
     path('weather/refresh/', views.weather_refresh, name='weather_refresh'),
     path('hourly/<int:year>/<int:month>/<int:day>/', views.hourly_forecast, name='hourly_forecast'),
+    path('flying/toggle/', views.toggle_flying_intent, name='toggle_flying_intent'),
 ]

@@ -50,5 +50,16 @@
         {% block content %}{% endblock %}
     </main>
     {% block scripts %}{% endblock %}
+    <script>
+        // Configure HTMX to include Django CSRF token
+        document.body.addEventListener('htmx:configRequest', function(evt) {
+            var csrfToken = document.cookie.split('; ')
+                .find(row => row.startsWith('csrftoken='))
+                ?.split('=')[1];
+            if (csrfToken) {
+                evt.detail.headers['X-CSRFToken'] = csrfToken;
+            }
+        });
+    </script>
 </body>
 </html>
