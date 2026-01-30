@@ -3,13 +3,16 @@
     hx-post="{% url 'toggle_flying_intent' %}"
     hx-vals='{"year": "{{ date.year }}", "month": "{{ date.month }}", "day": "{{ date.day }}"}'
     hx-target="#flying-button-container"
-    hx-swap="innerHTML"
+    hx-swap="innerHTML transition:false"
 >
-    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-    </svg>
-    {% if is_flying %}Flying!{% else %}I'm Flying!{% endif %}
-    {% if flying_count > 0 %}
-        <span class="badge badge-sm {% if is_flying %}badge-success{% else %}badge-primary{% endif %}">{{ flying_count }}</span>
+    {% if is_flying %}
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+        </svg>
+        Flying!
+        {% if flying_count > 0 %}<span class="badge badge-sm badge-success">{{ flying_count }}</span>{% endif %}
+    {% else %}
+        + Join
+        {% if flying_count > 0 %}<span class="text-xs opacity-70">({{ flying_count }} flying)</span>{% endif %}
     {% endif %}
 </button>

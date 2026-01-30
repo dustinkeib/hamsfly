@@ -306,3 +306,24 @@ def toggle_flying_intent(request):
         'is_flying': flying_info['is_flying'],
     }
     return render(request, 'hamsalert/partials/flying_button.html', context)
+
+
+@require_GET
+def flying_refresh(request):
+    """HTMX endpoint to refresh flying button (for polling)."""
+    year = request.GET.get('year')
+    month = request.GET.get('month')
+    day = request.GET.get('day')
+
+    try:
+        target_date = date(int(year), int(month), int(day))
+    except (ValueError, TypeError):
+        target_date = date.today()
+
+    flying_info = get_flying_info(request, target_date)
+
+    return render(request, 'hamsalert/partials/flying_button.html', {
+        'date': target_date,
+        'flying_count': flying_info['count'],
+        'is_flying': flying_info['is_flying'],
+    })
