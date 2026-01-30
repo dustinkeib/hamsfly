@@ -3,6 +3,9 @@ from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.contrib import admin, messages
+from django.http import HttpResponseRedirect
+from django.urls import path, reverse
+from django.utils.html import format_html
 from zoneinfo import ZoneInfo
 
 from .models import Event, WeatherRecord
@@ -26,8 +29,7 @@ def _get_weather_context():
     return service, local_today, lat, lon
 
 
-@admin.action(description="Poll All weather sources")
-def poll_all_sources(modeladmin, request, queryset):
+def _poll_all(request):
     """Poll all weather sources."""
     service, local_today, lat, lon = _get_weather_context()
     results = []
@@ -71,28 +73,25 @@ def poll_all_sources(modeladmin, request, queryset):
             service._save_to_db('hourly', target, service._serialize_hourly_data(data), lat=lat, lon=lon)
         results.append(f'Hourly ({len(hourly_results)} days)')
 
-        modeladmin.message_user(request, f"Polled: {', '.join(results)}", messages.SUCCESS)
+        return True, f"Polled: {', '.join(results)}"
     except Exception as e:
-        modeladmin.message_user(request, f"Poll failed: {e}", messages.ERROR)
+        return False, f"Poll failed: {e}"
 
 
-@admin.action(description="Poll METAR")
-def poll_metar(modeladmin, request, queryset):
+def _poll_metar(request):
     """Poll METAR for today."""
     service, local_today, lat, lon = _get_weather_context()
     try:
         data = service._fetch_metar_from_api(service.default_station)
         if data:
             service._save_to_db('metar', local_today, service._serialize_metar_data(data), station=service.default_station)
-            modeladmin.message_user(request, f"METAR updated for {local_today}", messages.SUCCESS)
-        else:
-            modeladmin.message_user(request, "No METAR data returned", messages.WARNING)
+            return True, f"METAR updated for {local_today}"
+        return False, "No METAR data returned"
     except Exception as e:
-        modeladmin.message_user(request, f"METAR poll failed: {e}", messages.ERROR)
+        return False, f"METAR poll failed: {e}"
 
 
-@admin.action(description="Poll TAF")
-def poll_taf(modeladmin, request, queryset):
+def _poll_taf(request):
     """Poll TAF for days 0-1."""
     service, local_today, lat, lon = _get_weather_context()
     try:
@@ -104,13 +103,12 @@ def poll_taf(modeladmin, request, queryset):
                 service._save_to_db('taf', target, service._serialize_taf_data(data), station=service.default_station)
                 count += 1
             time.sleep(1)
-        modeladmin.message_user(request, f"TAF updated ({count} days)", messages.SUCCESS)
+        return True, f"TAF updated ({count} days)"
     except Exception as e:
-        modeladmin.message_user(request, f"TAF poll failed: {e}", messages.ERROR)
+        return False, f"TAF poll failed: {e}"
 
 
-@admin.action(description="Poll NWS")
-def poll_nws(modeladmin, request, queryset):
+def _poll_nws(request):
     """Poll NWS for days 2-7."""
     service, local_today, lat, lon = _get_weather_context()
     try:
@@ -122,39 +120,36 @@ def poll_nws(modeladmin, request, queryset):
                 service._save_to_db('nws', target, service._serialize_nws_data(data), lat=lat, lon=lon)
                 count += 1
             time.sleep(1)
-        modeladmin.message_user(request, f"NWS updated ({count} days)", messages.SUCCESS)
+        return True, f"NWS updated ({count} days)"
     except Exception as e:
-        modeladmin.message_user(request, f"NWS poll failed: {e}", messages.ERROR)
+        return False, f"NWS poll failed: {e}"
 
 
-@admin.action(description="Poll OpenMeteo (daily)")
-def poll_openmeteo(modeladmin, request, queryset):
+def _poll_openmeteo(request):
     """Poll OpenMeteo daily forecast for days 0-15."""
     service, local_today, lat, lon = _get_weather_context()
     try:
         results = service.fetch_openmeteo_batch(local_today)
         for target, data in results:
             service._save_to_db('openmeteo', target, service._serialize_openmeteo_data(data), lat=lat, lon=lon)
-        modeladmin.message_user(request, f"OpenMeteo daily updated ({len(results)} days)", messages.SUCCESS)
+        return True, f"OpenMeteo daily updated ({len(results)} days)"
     except Exception as e:
-        modeladmin.message_user(request, f"OpenMeteo poll failed: {e}", messages.ERROR)
+        return False, f"OpenMeteo poll failed: {e}"
 
 
-@admin.action(description="Poll Hourly forecast")
-def poll_hourly(modeladmin, request, queryset):
+def _poll_hourly(request):
     """Poll OpenMeteo hourly forecast for days 0-15."""
     service, local_today, lat, lon = _get_weather_context()
     try:
         results = service.fetch_hourly_batch(local_today, days=16)
         for target, data in results:
             service._save_to_db('hourly', target, service._serialize_hourly_data(data), lat=lat, lon=lon)
-        modeladmin.message_user(request, f"Hourly updated ({len(results)} days)", messages.SUCCESS)
+        return True, f"Hourly updated ({len(results)} days)"
     except Exception as e:
-        modeladmin.message_user(request, f"Hourly poll failed: {e}", messages.ERROR)
+        return False, f"Hourly poll failed: {e}"
 
 
-@admin.action(description="Poll Historical (past 7 days)")
-def poll_historical(modeladmin, request, queryset):
+def _poll_historical(request):
     """Poll historical weather for past 7 days."""
     service, local_today, lat, lon = _get_weather_context()
     try:
@@ -169,9 +164,20 @@ def poll_historical(modeladmin, request, queryset):
             except Exception:
                 pass  # Skip individual failures
             time.sleep(1)
-        modeladmin.message_user(request, f"Historical updated ({count} days)", messages.SUCCESS)
+        return True, f"Historical updated ({count} days)"
     except Exception as e:
-        modeladmin.message_user(request, f"Historical poll failed: {e}", messages.ERROR)
+        return False, f"Historical poll failed: {e}"
+
+
+POLL_ACTIONS = {
+    'all': ('Poll All', _poll_all),
+    'metar': ('METAR', _poll_metar),
+    'taf': ('TAF', _poll_taf),
+    'nws': ('NWS', _poll_nws),
+    'openmeteo': ('OpenMeteo', _poll_openmeteo),
+    'hourly': ('Hourly', _poll_hourly),
+    'historical': ('Historical', _poll_historical),
+}
 
 
 @admin.register(WeatherRecord)
@@ -182,4 +188,33 @@ class WeatherRecordAdmin(admin.ModelAdmin):
     date_hierarchy = 'fetched_at'
     readonly_fields = ['fetched_at', 'data']
     ordering = ['-fetched_at']
-    actions = [poll_all_sources, poll_metar, poll_taf, poll_nws, poll_openmeteo, poll_hourly, poll_historical]
+    change_list_template = 'admin/hamsalert/weatherrecord/change_list.html'
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('poll/<str:source>/', self.admin_site.admin_view(self.poll_view), name='hamsalert_weatherrecord_poll'),
+        ]
+        return custom_urls + urls
+
+    def poll_view(self, request, source):
+        """Handle poll request for a specific source."""
+        if source not in POLL_ACTIONS:
+            messages.error(request, f"Unknown source: {source}")
+        else:
+            _, handler = POLL_ACTIONS[source]
+            success, message = handler(request)
+            if success:
+                messages.success(request, message)
+            else:
+                messages.error(request, message)
+
+        return HttpResponseRedirect(reverse('admin:hamsalert_weatherrecord_changelist'))
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context['poll_buttons'] = [
+            {'source': key, 'label': label}
+            for key, (label, _) in POLL_ACTIONS.items()
+        ]
+        return super().changelist_view(request, extra_context=extra_context)

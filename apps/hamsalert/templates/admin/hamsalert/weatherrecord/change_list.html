@@ -1,0 +1,12 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+{{ block.super }}
+<li>
+    <div style="display: inline-flex; gap: 5px; flex-wrap: wrap;">
+        {% for btn in poll_buttons %}
+        <a href="poll/{{ btn.source }}/" class="button" style="padding: 5px 10px;">{{ btn.label }}</a>
+        {% endfor %}
+    </div>
+</li>
+{% endblock %}
