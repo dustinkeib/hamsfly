@@ -13,6 +13,7 @@ Poll intervals (TTLs):
 """
 
 import logging
+import random
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -60,9 +61,19 @@ class WeatherPoller:
         # Initial delay to let Django fully start
         time.sleep(10)
 
-        # Run initial poll for all sources immediately
-        logger.info("WeatherPoller: Starting initial poll of all sources")
-        self._poll_all_sources()
+        # Check if we have any hourly data at all
+        from apps.hamsalert.models import WeatherRecord
+        has_any_hourly = WeatherRecord.objects.filter(weather_type='hourly').exists()
+
+        if not has_any_hourly:
+            # Fresh DB or no hourly data - wait random 2-5 min to avoid rate limits on startup
+            startup_delay = random.randint(120, 300)
+            logger.info(f"WeatherPoller: No hourly data, waiting {startup_delay}s before first poll")
+            time.sleep(startup_delay)
+            logger.info("WeatherPoller: Starting initial poll of all sources")
+            self._poll_all_sources()
+        else:
+            logger.info("WeatherPoller: Existing hourly data found, using TTL schedule")
 
         # Then switch to TTL-based scheduling
         while True:
