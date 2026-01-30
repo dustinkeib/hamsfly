@@ -3,8 +3,8 @@ from . import views
 
 urlpatterns = [
     path('', views.calendar_view, name='calendar'),
+    path('<int:year>/<int:month>/<int:day>/', views.calendar_day_view, name='calendar_day'),
     path('health/', views.health, name='health'),
-    path('events/<int:year>/<int:month>/<int:day>/', views.day_events, name='day_events'),
     path('weather/refresh/', views.weather_refresh, name='weather_refresh'),
-    path('weather/hourly/<int:year>/<int:month>/<int:day>/', views.hourly_forecast, name='hourly_forecast'),
+    path('hourly/<int:year>/<int:month>/<int:day>/', views.hourly_forecast, name='hourly_forecast'),
 ]

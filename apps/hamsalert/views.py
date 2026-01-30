@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from django.conf import settings as django_settings
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 from zoneinfo import ZoneInfo
@@ -55,10 +55,20 @@ def health(request):
 
 
 def calendar_view(request):
-    """Display a calendar grid with dots on days that have events."""
+    """Redirect to today's date."""
     today = date.today()
-    year = int(request.GET.get('year', today.year))
-    month = int(request.GET.get('month', today.month))
+    return redirect('calendar_day', year=today.year, month=today.month, day=today.day)
+
+
+def calendar_day_view(request, year, month, day):
+    """Display calendar with the selected day's events and weather."""
+    today = date.today()
+
+    # Validate date - redirect to today if invalid
+    try:
+        selected_date = date(year, month, day)
+    except ValueError:
+        return redirect('calendar_day', year=today.year, month=today.month, day=today.day)
 
     # Get calendar data
     cal = calendar.Calendar(firstweekday=6)  # Sunday first
@@ -82,6 +92,26 @@ def calendar_view(request):
     else:
         next_month, next_year = month + 1, year
 
+    # Get events and weather for selected day
+    events = Event.objects.filter(date=selected_date)
+
+    weather = None
+    weather_error = None
+    weather_service = WeatherService()
+
+    if weather_service.is_configured():
+        station = request.GET.get('station')
+        weather = weather_service.get_weather_from_db(selected_date, station)
+        if not weather or not weather.sources:
+            weather = None
+            days_out = (selected_date - today).days
+            if days_out > 15:
+                weather_error = "No forecast beyond 16 days"
+            elif days_out >= 0:
+                weather_error = "Weather data not yet available"
+
+    refresh = get_refresh_info(weather)
+
     context = {
         'year': year,
         'month': month,
@@ -89,46 +119,22 @@ def calendar_view(request):
         'month_days': month_days,
         'days_with_events': days_with_events,
         'today': today,
+        'selected_day': day,
+        'selected_date': selected_date,
         'prev_month': prev_month,
         'prev_year': prev_year,
         'next_month': next_month,
         'next_year': next_year,
-    }
-    return render(request, 'hamsalert/calendar.html', context)
-
-
-def day_events(request, year, month, day):
-    """Return events for a specific day (HTMX partial)."""
-    event_date = date(year, month, day)
-    events = Event.objects.filter(date=event_date)
-
-    # Read weather data from DB only (poller updates DB in background)
-    weather = None
-    weather_error = None
-    weather_service = WeatherService()
-
-    if weather_service.is_configured():
-        station = request.GET.get('station')
-        weather = weather_service.get_weather_from_db(event_date, station)
-        if not weather or not weather.sources:
-            weather = None
-            days_out = (event_date - date.today()).days
-            if days_out > 15:
-                weather_error = "No forecast beyond 16 days"
-            elif days_out >= 0:
-                weather_error = "Weather data not yet available"
-
-    refresh = get_refresh_info(weather)
-    context = {
+        # Day events context
         'events': events,
-        'date': event_date,
+        'date': selected_date,
         'weather': weather,
         'weather_error': weather_error,
         'weather_configured': weather_service.is_configured(),
         'refresh_seconds': refresh['seconds'],
         'refresh_minutes': refresh['minutes'],
     }
-    return render(request, 'hamsalert/partials/day_events.html', context)
+    return render(request, 'hamsalert/calendar.html', context)
 
 
 @require_GET

@@ -9,19 +9,17 @@
         <div class="card-body">
             <!-- Month Navigation -->
             <div class="flex items-center justify-between mb-4">
-                <a href="?year={{ prev_year }}&month={{ prev_month }}" class="btn btn-ghost btn-sm">&lt; Prev</a>
+                <a href="{% url 'calendar_day' prev_year prev_month 1 %}" class="btn btn-ghost btn-sm">&lt; Prev</a>
                 <div class="flex items-center gap-2">
                     <h2 class="card-title text-2xl"><span class="sm:hidden">{{ month_name|slice:":3" }}</span><span class="hidden sm:inline">{{ month_name }}</span> {{ year }}</h2>
-                    <a href="/" id="today-btn" class="btn btn-success btn-xs"><span class="sm:hidden">Today &gt;</span><span class="hidden sm:inline">Go to Today</span></a>
+                    <a href="{% url 'calendar' %}" class="btn btn-success btn-xs"><span class="sm:hidden">Today &gt;</span><span class="hidden sm:inline">Go to Today</span></a>
                 </div>
-                <a href="?year={{ next_year }}&month={{ next_month }}" class="btn btn-ghost btn-sm">Next &gt;</a>
+                <a href="{% url 'calendar_day' next_year next_month 1 %}" class="btn btn-ghost btn-sm">Next &gt;</a>
             </div>
 
             <!-- Calendar Grid -->
             <div class="grid grid-cols-7 gap-1">
                 <!-- Day Headers -->
-                {% for day_name in "Sun,Mon,Tue,Wed,Thu,Fri,Sat"|make_list %}
-                {% endfor %}
                 <div class="text-center font-bold p-2 text-sm">Sun</div>
                 <div class="text-center font-bold p-2 text-sm">Mon</div>
                 <div class="text-center font-bold p-2 text-sm">Tue</div>
@@ -36,20 +34,15 @@
                         {% if day == 0 %}
                             <div class="p-2"></div>
                         {% else %}
-                            <div
-                                class="p-2 text-center cursor-pointer rounded-lg hover:bg-base-200 relative"
-                                data-year="{{ year }}"
-                                data-month="{{ month }}"
-                                data-day="{{ day }}"
-                                hx-get="{% url 'day_events' year month day %}"
-                                hx-target="#event-list"
-                                hx-swap="innerHTML"
-                            >
+                            <a href="{% url 'calendar_day' year month day %}"
+                               class="p-2 text-center rounded-lg hover:bg-base-200 relative block
+                                      {% if day == selected_day %}ring-2 ring-accent ring-offset-2{% endif %}
+                                      {% if year == today.year and month == today.month and day == today.day %}bg-primary text-primary-content{% endif %}">
                                 {{ day }}
                                 {% if day in days_with_events %}
                                     <span class="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-1.5 h-1.5 bg-accent rounded-full"></span>
                                 {% endif %}
-                            </div>
+                            </a>
                         {% endif %}
                     {% endfor %}
                 {% endfor %}
@@ -62,109 +55,9 @@
         <div class="card-body">
             <h2 class="card-title">Events</h2>
             <div id="event-list">
-                <p class="text-base-content/60">Click a day to view events</p>
+                {% include "hamsalert/partials/day_events.html" %}
             </div>
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        document.getElementById('today-btn').addEventListener('click', function() {
-            const now = new Date();
-            localStorage.setItem('selectedDate',
-                `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`);
-        });
-        const now = new Date();
-        const todayYear = now.getFullYear();
-        const todayMonth = now.getMonth() + 1;
-        const todayDay = now.getDate();
-
-        // Check for saved date in localStorage
-        const saved = localStorage.getItem('selectedDate');
-        let savedYear, savedMonth, savedDay;
-        if (saved) {
-            const parts = saved.split('-');
-            savedYear = parseInt(parts[0], 10);
-            savedMonth = parseInt(parts[1], 10);
-            savedDay = parseInt(parts[2], 10);
-
-            // If saved date is in a different month, redirect to that month
-            // Only do this on fresh load (no query params), not when user navigated
-            const viewYear = {{ year }};
-            const viewMonth = {{ month }};
-            const hasQueryParams = window.location.search.length > 0;
-            if (!hasQueryParams && (savedYear !== viewYear || savedMonth !== viewMonth)) {
-                window.location.href = `?year=${savedYear}&month=${savedMonth}`;
-                return;
-            }
-        }
-
-        function selectDay(el) {
-            // Remove selection from all days
-            document.querySelectorAll('[data-day]').forEach(function(d) {
-                d.classList.remove('ring-2', 'ring-accent', 'ring-offset-2');
-            });
-            // Add selection to this day
-            el.classList.add('ring-2', 'ring-accent', 'ring-offset-2');
-        }
-
-        let loadedSaved = false;
-
-        document.querySelectorAll('[data-day]').forEach(function(el) {
-            const year = parseInt(el.dataset.year, 10);
-            const month = parseInt(el.dataset.month, 10);
-            const day = parseInt(el.dataset.day, 10);
-
-            // Highlight today
-            if (year === todayYear && month === todayMonth && day === todayDay) {
-                el.classList.add('bg-primary', 'text-primary-content');
-            }
-
-            // Load saved date if found on this calendar view
-            if (saved && year === savedYear && month === savedMonth && day === savedDay) {
-                const url = el.getAttribute('hx-get');
-                if (url) {
-                    htmx.ajax('GET', url, '#event-list');
-                    selectDay(el);
-                    loadedSaved = true;
-                }
-            }
-
-            // Save date and highlight on click
-            el.addEventListener('click', function() {
-                localStorage.setItem('selectedDate', `${year}-${month}-${day}`);
-                selectDay(el);
-            });
-        });
-
-        // Fall back to today (if current month) or first day (if different month)
-        if (!loadedSaved) {
-            const firstDayEl = document.querySelector('[data-day]');
-            const viewYear = parseInt(firstDayEl.dataset.year, 10);
-            const viewMonth = parseInt(firstDayEl.dataset.month, 10);
-            const isCurrentMonth = viewYear === todayYear && viewMonth === todayMonth;
-
-            let targetEl = null;
-            document.querySelectorAll('[data-day]').forEach(function(el) {
-                const day = parseInt(el.dataset.day, 10);
-                if (isCurrentMonth && day === todayDay) {
-                    targetEl = el;
-                } else if (!isCurrentMonth && day === 1 && !targetEl) {
-                    targetEl = el;
-                }
-            });
-
-            if (targetEl) {
-                const url = targetEl.getAttribute('hx-get');
-                if (url) {
-                    htmx.ajax('GET', url, '#event-list');
-                    selectDay(targetEl);
-                }
-            }
-        }
-    });
-</script>
 {% endblock %}
