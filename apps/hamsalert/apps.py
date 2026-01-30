@@ -1,4 +1,12 @@
 from django.apps import AppConfig
+from django.db.backends.signals import connection_created
+
+
+def enable_wal_mode(sender, connection, **kwargs):
+    """Enable WAL mode for SQLite to reduce lock contention."""
+    if connection.vendor == 'sqlite':
+        cursor = connection.cursor()
+        cursor.execute('PRAGMA journal_mode=WAL;')
 
 
 class HamsalertConfig(AppConfig):
@@ -6,6 +14,8 @@ class HamsalertConfig(AppConfig):
     name = 'apps.hamsalert'
 
     def ready(self):
+        connection_created.connect(enable_wal_mode)
+
         import sys
 
         # Don't start background threads during tests

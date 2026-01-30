@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from django.conf import settings
+from django.db import OperationalError
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -1141,44 +1142,54 @@ class WeatherService:
         """
         from apps.hamsalert.models import WeatherRecord
 
-        try:
-            # Build lookup - always include all fields to match unique constraint
-            lookup = {
-                'weather_type': weather_type,
-                'target_date': target_date,
-                'station': station or '',
-                'latitude': Decimal(str(lat)) if lat is not None else None,
-                'longitude': Decimal(str(lon)) if lon is not None else None,
-            }
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                # Build lookup - always include all fields to match unique constraint
+                lookup = {
+                    'weather_type': weather_type,
+                    'target_date': target_date,
+                    'station': station or '',
+                    'latitude': Decimal(str(lat)) if lat is not None else None,
+                    'longitude': Decimal(str(lon)) if lon is not None else None,
+                }
 
-            defaults = {
-                'data': data,
-                'fetched_at': timezone.now(),
-                'api_response_time_ms': api_response_time_ms,
-            }
+                defaults = {
+                    'data': data,
+                    'fetched_at': timezone.now(),
+                    'api_response_time_ms': api_response_time_ms,
+                }
 
-            # For records with NULL lat/lon, update_or_create won't match due to NULL != NULL
-            # So we need to manually check for existing records first
-            if lat is None and lon is None:
-                existing = WeatherRecord.objects.filter(
-                    weather_type=weather_type,
-                    target_date=target_date,
-                    station=station or '',
-                    latitude__isnull=True,
-                    longitude__isnull=True,
-                ).first()
-                if existing:
-                    for key, value in defaults.items():
-                        setattr(existing, key, value)
-                    existing.save()
+                # For records with NULL lat/lon, update_or_create won't match due to NULL != NULL
+                # So we need to manually check for existing records first
+                if lat is None and lon is None:
+                    existing = WeatherRecord.objects.filter(
+                        weather_type=weather_type,
+                        target_date=target_date,
+                        station=station or '',
+                        latitude__isnull=True,
+                        longitude__isnull=True,
+                    ).first()
+                    if existing:
+                        for key, value in defaults.items():
+                            setattr(existing, key, value)
+                        existing.save()
+                    else:
+                        WeatherRecord.objects.create(**lookup, **defaults)
                 else:
-                    WeatherRecord.objects.create(**lookup, **defaults)
-            else:
-                WeatherRecord.objects.update_or_create(defaults=defaults, **lookup)
+                    WeatherRecord.objects.update_or_create(defaults=defaults, **lookup)
 
-            logger.debug(f"Saved {weather_type} to DB for {target_date}")
-        except Exception as e:
-            logger.warning(f"Failed to save weather to DB: {e}")
+                logger.debug(f"Saved {weather_type} to DB for {target_date}")
+                return
+            except OperationalError as e:
+                if 'database is locked' in str(e) and attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))  # 0.5s, 1s, 1.5s
+                    continue
+                logger.warning(f"Failed to save weather to DB: {e}")
+                return
+            except Exception as e:
+                logger.warning(f"Failed to save weather to DB: {e}")
+                return
 
     def _serialize_openmeteo_data(self, data: OpenMeteoForecastData) -> dict:
         """Serialize OpenMeteoForecastData to dict for DB storage."""
