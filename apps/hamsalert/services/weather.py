@@ -5,7 +5,7 @@ Provides weather data from multiple sources for R/C flying conditions assessment
 - METAR (AVWX) - Current conditions (today)
 - TAF (AVWX) - Aviation forecast (~24-30h, tomorrow)
 - NWS API - 7-day forecast (2-7 days out)
-- Visual Crossing - 15-day extended forecast (8-15 days out)
+- Visual Crossing - 15-day extended forecast (8-14 days out)
 
 Implements caching to stay within API rate limits.
 """
@@ -1571,7 +1571,7 @@ class WeatherService:
             return self._get_taf(station, target_date)
         if days_out <= 7:
             return self._get_nws_forecast(target_date)
-        if days_out <= 15:
+        if days_out <= 14:
             return self._get_extended_forecast(target_date)
         return UnavailableWeatherData("Forecast not available beyond 15 days")
 
@@ -1610,14 +1610,14 @@ class WeatherService:
                 logger.warning(f"Historical fetch failed: {e}")
                 return CompositeWeatherData(target_date=target_date)
 
-        if days_out > 15:
+        if days_out > 14:
             return CompositeWeatherData(target_date=target_date)
 
         # Determine which sources to fetch
         fetch_metar = days_out == 0
         fetch_taf = days_out <= 1
         fetch_nws = days_out <= 7
-        fetch_extended = days_out <= 15
+        fetch_extended = days_out <= 14
 
         # Prepare fetch tasks
         results = {
@@ -1747,8 +1747,8 @@ class WeatherService:
                 if db_data:
                     results['nws'] = self._deserialize_nws_data(db_data)
 
-            # Days 0-15: Extended forecast
-            if days_out <= 15:
+            # Days 0-14: Extended forecast
+            if days_out <= 14:
                 db_data = self._get_from_db('extended', target_date, lat=lat, lon=lon)
                 if db_data:
                     results['extended'] = self._deserialize_extended_data(db_data)
@@ -1826,7 +1826,7 @@ class WeatherService:
             WeatherRecord.objects.filter(
                 weather_type='nws', target_date=target_date
             ).delete()
-        if days_out <= 15:
+        if days_out <= 14:
             WeatherRecord.objects.filter(
                 weather_type='extended', target_date=target_date
             ).delete()
@@ -2654,7 +2654,7 @@ class WeatherService:
             WeatherRecord.objects.filter(
                 weather_type='nws', target_date=target_date
             ).delete()
-        elif days_out <= 16:
+        elif days_out <= 14:
             WeatherRecord.objects.filter(
                 weather_type='extended', target_date=target_date
             ).delete()
