@@ -108,11 +108,15 @@ def calendar_day_view(request, year, month, day):
         prev_month, prev_year = 12, year - 1
     else:
         prev_month, prev_year = month - 1, year
+    # Last day of previous month
+    prev_day = calendar.monthrange(prev_year, prev_month)[1]
 
     if month == 12:
         next_month, next_year = 1, year + 1
     else:
         next_month, next_year = month + 1, year
+    # First day of next month
+    next_day = 1
 
     # Get events and weather for selected day
     events = Event.objects.filter(date=selected_date)
@@ -143,10 +147,12 @@ def calendar_day_view(request, year, month, day):
         'today': today,
         'selected_day': day,
         'selected_date': selected_date,
-        'prev_month': prev_month,
         'prev_year': prev_year,
-        'next_month': next_month,
+        'prev_month': prev_month,
+        'prev_day': prev_day,
         'next_year': next_year,
+        'next_month': next_month,
+        'next_day': next_day,
         # Day events context
         'events': events,
         'date': selected_date,
