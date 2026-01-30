@@ -90,6 +90,16 @@
             savedYear = parseInt(parts[0], 10);
             savedMonth = parseInt(parts[1], 10);
             savedDay = parseInt(parts[2], 10);
+
+            // If saved date is in a different month, redirect to that month
+            // Only do this on fresh load (no query params), not when user navigated
+            const viewYear = {{ year }};
+            const viewMonth = {{ month }};
+            const hasQueryParams = window.location.search.length > 0;
+            if (!hasQueryParams && (savedYear !== viewYear || savedMonth !== viewMonth)) {
+                window.location.href = `?year=${savedYear}&month=${savedMonth}`;
+                return;
+            }
         }
 
         function selectDay(el) {

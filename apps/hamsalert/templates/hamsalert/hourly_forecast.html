@@ -62,3 +62,10 @@
     {% endif %}
 </div>
 {% endblock %}
+
+{% block scripts %}
+<script>
+    // Sync localStorage so Back to Calendar shows this date
+    localStorage.setItem('selectedDate', '{{ target_date.year }}-{{ target_date.month }}-{{ target_date.day }}');
+</script>
+{% endblock %}
