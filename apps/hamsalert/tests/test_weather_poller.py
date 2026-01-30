@@ -126,7 +126,7 @@ class WeatherPollerTests(TestCase):
         poller._poll_all_sources()
 
         # All sources should have been polled
-        self.assertEqual(poller._poll_source.call_count, 4)
+        self.assertEqual(poller._poll_source.call_count, 5)
         # All last_poll times should be set
-        for source in ['metar', 'taf', 'nws', 'openmeteo']:
+        for source in ['metar', 'taf', 'nws', 'openmeteo', 'historical']:
             self.assertIsNotNone(poller.last_poll[source])

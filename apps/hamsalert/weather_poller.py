@@ -10,6 +10,7 @@ Poll intervals (TTLs):
 - NWS: 2 hours (days 2-7)
 - OpenMeteo: 4 hours (days 0-15)
 - Hourly: 4 hours (days 0-15)
+- Historical: 24 hours (past dates back to 1st of month)
 """
 
 import logging
@@ -31,6 +32,7 @@ METAR_INTERVAL = 1800      # 30 min
 TAF_INTERVAL = 3600        # 1 hour
 NWS_INTERVAL = 7200        # 2 hours
 OPENMETEO_INTERVAL = 14400 # 4 hours
+HISTORICAL_INTERVAL = 86400  # 24 hours
 
 # Delay between API calls to avoid rate limiting (seconds)
 API_CALL_DELAY = 2
@@ -53,6 +55,7 @@ class WeatherPoller:
             'taf': None,
             'nws': None,
             'openmeteo': None,
+            'historical': None,
         }
         self._rate_limited_until = 0  # timestamp when rate limit expires
 
@@ -76,18 +79,20 @@ class WeatherPoller:
             logger.info("WeatherPoller: Existing hourly data found, using TTL schedule")
 
         # Then switch to TTL-based scheduling
+        logger.info("WeatherPoller: Entering main poll loop")
         while True:
             if not self._is_rate_limited():
                 self._poll_if_due('metar', METAR_INTERVAL)
                 self._poll_if_due('taf', TAF_INTERVAL)
                 self._poll_if_due('nws', NWS_INTERVAL)
                 self._poll_if_due('openmeteo', OPENMETEO_INTERVAL)
+                self._poll_if_due('historical', HISTORICAL_INTERVAL)
             time.sleep(60)  # Check every minute
 
     def _poll_all_sources(self):
         """Poll all sources immediately (used on startup), skipping if fresh data exists."""
         local_today = datetime.now(self.local_timezone).date()
-        for source in ['metar', 'taf', 'nws', 'openmeteo']:
+        for source in ['metar', 'taf', 'nws', 'openmeteo', 'historical']:
             if self._is_rate_limited():
                 logger.info("WeatherPoller: Rate limited, stopping initial poll")
                 break
@@ -129,6 +134,7 @@ class WeatherPoller:
             'taf': ('taf', TAF_INTERVAL),
             'nws': ('nws', NWS_INTERVAL),
             'openmeteo': ('openmeteo', OPENMETEO_INTERVAL),
+            'historical': ('historical', HISTORICAL_INTERVAL),
         }
         weather_type, ttl = ttl_map.get(source, (source, 3600))
 
@@ -148,7 +154,25 @@ class WeatherPoller:
                 fetched_at__gte=cutoff,
             ).exists()
             if has_daily and has_hourly:
-                logger.debug(f"WeatherPoller: Fresh openmeteo+hourly data exists, skipping poll")
+                logger.info(f"WeatherPoller: Fresh openmeteo+hourly data exists, skipping poll")
+                return True
+            return False
+
+        # For historical, check if we have all days from 1st of month to yesterday
+        if source == 'historical':
+            first_of_month = local_today.replace(day=1)
+            yesterday = local_today - timedelta(days=1)
+            if yesterday < first_of_month:
+                # It's the 1st of the month, no historical to fetch
+                return True
+            expected_days = (yesterday - first_of_month).days + 1
+            actual_days = WeatherRecord.objects.filter(
+                weather_type='historical',
+                target_date__gte=first_of_month,
+                target_date__lte=yesterday,
+            ).count()
+            if actual_days >= expected_days:
+                logger.info(f"WeatherPoller: Historical data complete ({actual_days} days), skipping poll")
                 return True
             return False
 
@@ -159,7 +183,7 @@ class WeatherPoller:
         ).exists()
 
         if exists:
-            logger.debug(f"WeatherPoller: Fresh {source} data exists, skipping poll")
+            logger.info(f"WeatherPoller: Fresh {source} data exists, skipping poll")
         return exists
 
     def _poll_source(self, source: str):
@@ -175,6 +199,8 @@ class WeatherPoller:
                 self._poll_nws(local_today)
             elif source == 'openmeteo':
                 self._poll_openmeteo(local_today)
+            elif source == 'historical':
+                self._poll_historical(local_today)
         except Exception as e:
             logger.exception(f"WeatherPoller: Error polling {source}: {e}")
 
@@ -210,7 +236,7 @@ class WeatherPoller:
                         self.service._serialize_taf_data(data),
                         station=self.service.default_station,
                     )
-                    logger.debug(f"WeatherPoller: TAF updated for {target_date}")
+                    logger.info(f"WeatherPoller: TAF updated for {target_date}")
             except Exception as e:
                 logger.warning(f"WeatherPoller: TAF poll failed for {target_date}: {e}")
             time.sleep(API_CALL_DELAY)
@@ -232,7 +258,7 @@ class WeatherPoller:
                         lat=lat,
                         lon=lon,
                     )
-                    logger.debug(f"WeatherPoller: NWS updated for {target_date}")
+                    logger.info(f"WeatherPoller: NWS updated for {target_date}")
             except Exception as e:
                 logger.warning(f"WeatherPoller: NWS poll failed for {target_date}: {e}")
             time.sleep(API_CALL_DELAY)
@@ -285,11 +311,73 @@ class WeatherPoller:
 
         logger.info("WeatherPoller: OpenMeteo updated")
 
+    def _poll_historical(self, local_today: date):
+        """Poll historical data from 1st of month to yesterday."""
+        from apps.hamsalert.models import WeatherRecord
+
+        first_of_month = local_today.replace(day=1)
+        yesterday = local_today - timedelta(days=1)
+
+        if yesterday < first_of_month:
+            # It's the 1st of the month, no historical to fetch
+            return
+
+        logger.info(f"WeatherPoller: Polling historical ({first_of_month} to {yesterday})")
+        lat, lon = self.service.nws_location
+        fetched = 0
+
+        # Fetch each day that's missing
+        current = first_of_month
+        while current <= yesterday:
+            if self._is_rate_limited():
+                logger.info("WeatherPoller: Rate limited, stopping historical poll")
+                break
+
+            # Skip if we already have this date
+            exists = WeatherRecord.objects.filter(
+                weather_type='historical',
+                target_date=current,
+            ).exists()
+
+            if not exists:
+                try:
+                    data = self.service._fetch_historical_weather(current)
+                    if data:
+                        self.service._save_to_db(
+                            'historical',
+                            current,
+                            self.service._serialize_historical_data(data),
+                            lat=lat,
+                            lon=lon,
+                        )
+                        fetched += 1
+                        logger.info(f"WeatherPoller: Historical fetched for {current}")
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if 'rate limit' in error_str or '429' in error_str:
+                        self._set_rate_limited()
+                        break
+                    logger.warning(f"WeatherPoller: Historical poll failed for {current}: {e}")
+                time.sleep(API_CALL_DELAY)
+
+            current += timedelta(days=1)
+
+        if fetched > 0:
+            logger.info(f"WeatherPoller: Historical updated ({fetched} days fetched)")
+        else:
+            logger.info("WeatherPoller: Historical already complete")
+
 
 def _poller_loop():
     """Entry point for poller thread."""
-    poller = WeatherPoller()
-    poller.run()
+    logger.info("WeatherPoller: Thread starting")
+    try:
+        poller = WeatherPoller()
+        poller.run()
+    except Exception as e:
+        logger.exception(f"WeatherPoller: Thread crashed: {e}")
+    finally:
+        logger.info("WeatherPoller: Thread exiting")
 
 
 def start():
@@ -301,6 +389,6 @@ def start():
             return
         _started = True
 
-    thread = threading.Thread(target=_poller_loop, daemon=True)
+    thread = threading.Thread(target=_poller_loop, name="WeatherPoller", daemon=True)
     thread.start()
-    logger.info("WeatherPoller started")
+    logger.info("WeatherPoller: Started background thread")

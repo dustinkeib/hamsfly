@@ -208,5 +208,10 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'apps.hamsalert.weather_poller': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }
