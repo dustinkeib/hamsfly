@@ -163,11 +163,15 @@ NWS_USER_AGENT = 'HamsAlert/1.0'
 # Local timezone for weather date comparisons
 WEATHER_LOCAL_TIMEZONE = 'America/Los_Angeles'
 
+# Visual Crossing API Key (for extended forecasts)
+# Get a free API key at https://www.visualcrossing.com/sign-up
+VISUALCROSSING_API_KEY = os.environ.get('VISUALCROSSING_API_KEY', '')
+
 # Weather Cache TTLs
 WEATHER_METAR_CACHE_TTL = 1800   # 30 min
 WEATHER_TAF_CACHE_TTL = 3600    # 1 hour
 WEATHER_NWS_CACHE_TTL = 7200    # 2 hours
-WEATHER_OPENMETEO_CACHE_TTL = 14400  # 4 hours
+WEATHER_VISUALCROSSING_CACHE_TTL = 14400  # 4 hours
 
 # Open-Meteo Rate Limiting
 OPENMETEO_MAX_RETRIES = 3

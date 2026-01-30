@@ -70,25 +70,25 @@ class WeatherPollerTests(TestCase):
         today = date.today()
         mock_daily_results = [
             (today + timedelta(days=i), MagicMock())
-            for i in range(16)
+            for i in range(15)
         ]
         mock_hourly_results = [
             (today + timedelta(days=i), MagicMock())
-            for i in range(16)
+            for i in range(15)
         ]
-        mock_service.fetch_openmeteo_batch.return_value = mock_daily_results
-        mock_service.fetch_hourly_batch.return_value = mock_hourly_results
+        mock_service.fetch_visualcrossing_batch.return_value = mock_daily_results
+        mock_service.fetch_visualcrossing_hourly_batch.return_value = mock_hourly_results
         mock_service._serialize_openmeteo_data.return_value = {'test': 'data'}
         mock_service._serialize_hourly_data.return_value = {'test': 'hourly'}
         poller.service = mock_service
 
         poller._poll_openmeteo(today)
 
-        # Batch methods should be called once each (not 16 times)
-        mock_service.fetch_openmeteo_batch.assert_called_once_with(today)
-        mock_service.fetch_hourly_batch.assert_called_once_with(today, days=16)
-        # Save called twice per day (daily + hourly) = 32 total
-        self.assertEqual(mock_service._save_to_db.call_count, 32)
+        # Batch methods should be called once each (not 15 times)
+        mock_service.fetch_visualcrossing_batch.assert_called_once_with(today)
+        mock_service.fetch_visualcrossing_hourly_batch.assert_called_once_with(today, days=15)
+        # Save called twice per day (daily + hourly) = 30 total
+        self.assertEqual(mock_service._save_to_db.call_count, 30)
 
     def test_poll_source_handles_api_error(self):
         """Poller should handle API errors gracefully."""

@@ -282,14 +282,15 @@ class WeatherServiceConfigTests(TestCase):
         WEATHER_METAR_CACHE_TTL=900,
         WEATHER_TAF_CACHE_TTL=1800,
         WEATHER_NWS_CACHE_TTL=3600,
-        WEATHER_OPENMETEO_CACHE_TTL=7200,
+        WEATHER_VISUALCROSSING_CACHE_TTL=7200,
     )
     def test_custom_cache_ttls(self):
         service = WeatherService()
         self.assertEqual(service.metar_cache_ttl, 900)
         self.assertEqual(service.taf_cache_ttl, 1800)
         self.assertEqual(service.nws_cache_ttl, 3600)
-        self.assertEqual(service.openmeteo_cache_ttl, 7200)
+        self.assertEqual(service.visualcrossing_cache_ttl, 7200)
+        self.assertEqual(service.openmeteo_cache_ttl, 7200)  # Alias
 
 
 class WeatherServiceNWSParsingTests(TestCase):

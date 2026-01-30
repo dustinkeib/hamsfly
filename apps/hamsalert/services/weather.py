@@ -5,7 +5,7 @@ Provides weather data from multiple sources for R/C flying conditions assessment
 - METAR (AVWX) - Current conditions (today)
 - TAF (AVWX) - Aviation forecast (~24-30h, tomorrow)
 - NWS API - 7-day forecast (2-7 days out)
-- Open-Meteo - 16-day extended forecast (8-16 days out)
+- Visual Crossing - 15-day extended forecast (8-15 days out)
 
 Implements caching to stay within API rate limits.
 """
@@ -886,12 +886,14 @@ class WeatherService:
         self.nws_location = getattr(settings, 'NWS_DEFAULT_LOCATION', (40.9781, -124.1086))
         self.nws_user_agent = getattr(settings, 'NWS_USER_AGENT', 'HamsAlert/1.0')
         self.local_timezone = ZoneInfo(getattr(settings, 'WEATHER_LOCAL_TIMEZONE', 'America/Los_Angeles'))
+        self.visualcrossing_api_key = getattr(settings, 'VISUALCROSSING_API_KEY', '')
 
         # Cache TTLs
         self.metar_cache_ttl = getattr(settings, 'WEATHER_METAR_CACHE_TTL', 1800)
         self.taf_cache_ttl = getattr(settings, 'WEATHER_TAF_CACHE_TTL', 3600)
         self.nws_cache_ttl = getattr(settings, 'WEATHER_NWS_CACHE_TTL', 7200)
-        self.openmeteo_cache_ttl = getattr(settings, 'WEATHER_OPENMETEO_CACHE_TTL', 14400)
+        self.visualcrossing_cache_ttl = getattr(settings, 'WEATHER_VISUALCROSSING_CACHE_TTL', 14400)
+        self.openmeteo_cache_ttl = self.visualcrossing_cache_ttl  # Alias for compatibility
         self.historical_cache_ttl = getattr(settings, 'WEATHER_HISTORICAL_CACHE_TTL', 86400)  # 24 hours
 
         # Rate limiting settings (can be overridden via settings)
@@ -2882,3 +2884,274 @@ class WeatherService:
         except (KeyError, TypeError, IndexError) as e:
             logger.error(f"Failed to parse hourly batch response: {e}")
             raise WeatherServiceError(f"Failed to parse hourly data: {e}")
+
+    # -------------------------------------------------------------------------
+    # Visual Crossing batch fetch methods (replacement for Open-Meteo)
+    # -------------------------------------------------------------------------
+
+    def fetch_visualcrossing_batch(self, local_today: date) -> list[tuple[date, OpenMeteoForecastData]]:
+        """
+        Fetch daily forecast from Visual Crossing for 15 days in ONE API call.
+        Returns list of (target_date, data) tuples for each day.
+        Uses OpenMeteoForecastData for compatibility with existing code.
+        """
+        if not self.visualcrossing_api_key:
+            raise WeatherServiceError("Visual Crossing API key not configured")
+
+        lat, lon = self.nws_location
+        location = f"{lat},{lon}"
+
+        # Visual Crossing gives us 15 days of forecast
+        url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{location}"
+
+        params = {
+            'key': self.visualcrossing_api_key,
+            'unitGroup': 'metric',  # Celsius, km/h
+            'include': 'days',
+            'contentType': 'json',
+        }
+
+        response = self._make_request_with_retry(url, params=params)
+
+        if response.status_code == 401:
+            raise WeatherServiceError("Invalid Visual Crossing API key")
+        elif response.status_code != 200:
+            logger.warning(f"Visual Crossing API error: {response.status_code}")
+            raise WeatherServiceError(f"Visual Crossing API error: {response.status_code}")
+
+        return self._parse_visualcrossing_batch_response(response.json())
+
+    def _parse_visualcrossing_batch_response(self, data: dict) -> list[tuple[date, OpenMeteoForecastData]]:
+        """Parse Visual Crossing API response and return all days."""
+        results = []
+        try:
+            days = data.get('days', [])
+
+            for day_data in days:
+                try:
+                    target_date = date.fromisoformat(day_data.get('datetime', ''))
+                except ValueError:
+                    continue
+
+                temp_max = day_data.get('tempmax')
+                temp_min = day_data.get('tempmin')
+                precip_prob = day_data.get('precipprob')
+                wind_speed_kmh = day_data.get('windspeed') or 0  # km/h in metric
+                wind_gust_kmh = day_data.get('windgust')
+                wind_dir = day_data.get('winddir')
+
+                # Convert km/h to knots (1 km/h = 0.54 knots)
+                wind_speed_kt = round(wind_speed_kmh * 0.54)
+                wind_gust_kt = round(wind_gust_kmh * 0.54) if wind_gust_kmh else None
+
+                wind = WindData(
+                    direction=round(wind_dir) if wind_dir is not None else None,
+                    speed=wind_speed_kt,
+                    gust=wind_gust_kt,
+                    direction_repr=str(round(wind_dir)) if wind_dir is not None else 'VRB',
+                )
+
+                forecast = OpenMeteoForecastData(
+                    location=self.nws_location,
+                    target_date=target_date,
+                    wind=wind,
+                    temperature_high=round(temp_max) if temp_max is not None else None,
+                    temperature_low=round(temp_min) if temp_min is not None else None,
+                    precipitation_probability=round(precip_prob) if precip_prob is not None else None,
+                    cached_at=timezone.now(),
+                    source=WeatherSource.OPENMETEO,  # Keep same source for DB compatibility
+                )
+                results.append((target_date, forecast))
+
+        except (KeyError, TypeError, IndexError) as e:
+            logger.error(f"Failed to parse Visual Crossing batch response: {e}")
+            raise WeatherServiceError(f"Failed to parse Visual Crossing data: {e}")
+
+        return results
+
+    def fetch_visualcrossing_hourly_batch(self, local_today: date, days: int = 15) -> list[tuple[date, 'HourlyForecastData']]:
+        """
+        Fetch hourly forecast from Visual Crossing for multiple days in ONE API call.
+        Returns list of (target_date, data) tuples for each day.
+        """
+        if not self.visualcrossing_api_key:
+            raise WeatherServiceError("Visual Crossing API key not configured")
+
+        lat, lon = self.nws_location
+        location = f"{lat},{lon}"
+
+        url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{location}"
+
+        params = {
+            'key': self.visualcrossing_api_key,
+            'unitGroup': 'metric',  # Celsius, km/h
+            'include': 'hours',
+            'contentType': 'json',
+        }
+
+        response = self._make_request_with_retry(url, params=params)
+
+        if response.status_code == 401:
+            raise WeatherServiceError("Invalid Visual Crossing API key")
+        elif response.status_code != 200:
+            logger.warning(f"Visual Crossing hourly API error: {response.status_code}")
+            raise WeatherServiceError(f"Visual Crossing API error: {response.status_code}")
+
+        return self._parse_visualcrossing_hourly_batch_response(response.json())
+
+    def _parse_visualcrossing_hourly_batch_response(self, data: dict) -> list[tuple[date, 'HourlyForecastData']]:
+        """Parse Visual Crossing hourly API response and return all days."""
+        results = []
+        try:
+            days = data.get('days', [])
+
+            for day_data in days:
+                try:
+                    target_date = date.fromisoformat(day_data.get('datetime', ''))
+                except ValueError:
+                    continue
+
+                hours_data = day_data.get('hours', [])
+                hours = []
+
+                for hour_data in hours_data:
+                    time_str = hour_data.get('datetime', '')  # Format: "HH:MM:SS"
+                    try:
+                        hour_time = datetime.combine(
+                            target_date,
+                            datetime.strptime(time_str, "%H:%M:%S").time(),
+                            tzinfo=self.local_timezone,
+                        )
+                    except ValueError:
+                        continue
+
+                    # Map Visual Crossing conditions to WMO weather codes (approximate)
+                    conditions = hour_data.get('conditions', '')
+                    weather_code = self._conditions_to_wmo_code(conditions)
+
+                    hours.append(HourlyForecastEntry(
+                        time=hour_time,
+                        temperature_c=hour_data.get('temp'),
+                        wind_speed_kmh=hour_data.get('windspeed'),
+                        wind_direction=round(hour_data.get('winddir')) if hour_data.get('winddir') is not None else None,
+                        wind_gusts_kmh=hour_data.get('windgust'),
+                        precipitation_probability=round(hour_data.get('precipprob')) if hour_data.get('precipprob') is not None else None,
+                        weather_code=weather_code,
+                    ))
+
+                forecast = HourlyForecastData(
+                    location=self.nws_location,
+                    target_date=target_date,
+                    hours=hours,
+                    cached_at=timezone.now(),
+                )
+                results.append((target_date, forecast))
+
+        except (KeyError, TypeError, IndexError) as e:
+            logger.error(f"Failed to parse Visual Crossing hourly response: {e}")
+            raise WeatherServiceError(f"Failed to parse Visual Crossing hourly data: {e}")
+
+        return results
+
+    def _conditions_to_wmo_code(self, conditions: str) -> Optional[int]:
+        """Map Visual Crossing conditions string to WMO weather code."""
+        if not conditions:
+            return None
+
+        conditions_lower = conditions.lower()
+
+        # Map common conditions to WMO codes
+        if 'clear' in conditions_lower:
+            return 0  # Clear sky
+        elif 'partly cloudy' in conditions_lower:
+            return 2  # Partly cloudy
+        elif 'overcast' in conditions_lower:
+            return 3  # Overcast
+        elif 'cloudy' in conditions_lower:
+            return 3  # Cloudy
+        elif 'fog' in conditions_lower:
+            return 45  # Fog
+        elif 'drizzle' in conditions_lower:
+            return 51  # Light drizzle
+        elif 'rain' in conditions_lower and 'heavy' in conditions_lower:
+            return 65  # Heavy rain
+        elif 'rain' in conditions_lower:
+            return 61  # Moderate rain
+        elif 'snow' in conditions_lower and 'heavy' in conditions_lower:
+            return 75  # Heavy snow
+        elif 'snow' in conditions_lower:
+            return 71  # Moderate snow
+        elif 'thunder' in conditions_lower:
+            return 95  # Thunderstorm
+
+        return 1  # Default to mainly clear
+
+    def fetch_visualcrossing_historical(self, target_date: date) -> Optional[HistoricalWeatherData]:
+        """Fetch historical weather from Visual Crossing for a specific date."""
+        if not self.visualcrossing_api_key:
+            raise WeatherServiceError("Visual Crossing API key not configured")
+
+        lat, lon = self.nws_location
+        location = f"{lat},{lon}"
+        date_str = target_date.isoformat()
+
+        url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{location}/{date_str}/{date_str}"
+
+        params = {
+            'key': self.visualcrossing_api_key,
+            'unitGroup': 'metric',
+            'include': 'days',
+            'contentType': 'json',
+        }
+
+        response = self._make_request_with_retry(url, params=params)
+
+        if response.status_code == 401:
+            raise WeatherServiceError("Invalid Visual Crossing API key")
+        elif response.status_code != 200:
+            logger.warning(f"Visual Crossing historical API error: {response.status_code}")
+            raise WeatherServiceError(f"Visual Crossing API error: {response.status_code}")
+
+        return self._parse_visualcrossing_historical_response(response.json(), target_date)
+
+    def _parse_visualcrossing_historical_response(self, data: dict, target_date: date) -> Optional[HistoricalWeatherData]:
+        """Parse Visual Crossing historical API response."""
+        try:
+            days = data.get('days', [])
+            if not days:
+                return None
+
+            day_data = days[0]
+
+            temp_max = day_data.get('tempmax')
+            temp_min = day_data.get('tempmin')
+            precip_sum = day_data.get('precip')  # mm in metric
+            wind_speed_kmh = day_data.get('windspeed') or 0
+            wind_gust_kmh = day_data.get('windgust')
+            wind_dir = day_data.get('winddir')
+
+            # Convert km/h to knots
+            wind_speed_kt = round(wind_speed_kmh * 0.54)
+            wind_gust_kt = round(wind_gust_kmh * 0.54) if wind_gust_kmh else None
+
+            wind = WindData(
+                direction=round(wind_dir) if wind_dir is not None else None,
+                speed=wind_speed_kt,
+                gust=wind_gust_kt,
+                direction_repr=str(round(wind_dir)) if wind_dir is not None else 'VRB',
+            )
+
+            return HistoricalWeatherData(
+                location=self.nws_location,
+                target_date=target_date,
+                wind=wind,
+                temperature_high=round(temp_max) if temp_max is not None else None,
+                temperature_low=round(temp_min) if temp_min is not None else None,
+                precipitation_sum=precip_sum,
+                cached_at=timezone.now(),
+                source=WeatherSource.HISTORICAL,
+            )
+
+        except (KeyError, TypeError, IndexError) as e:
+            logger.error(f"Failed to parse Visual Crossing historical response: {e}")
+            raise WeatherServiceError(f"Failed to parse historical data: {e}")

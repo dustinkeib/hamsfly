@@ -8,8 +8,8 @@ Poll intervals (TTLs):
 - METAR: 30 min (day 0 only)
 - TAF: 1 hour (days 0-1)
 - NWS: 2 hours (days 2-7)
-- OpenMeteo: 4 hours (days 0-15)
-- Hourly: 4 hours (days 0-15)
+- Visual Crossing: 4 hours (days 0-14)
+- Hourly: 4 hours (days 0-14)
 - Historical: 24 hours (past dates back to 1st of month)
 """
 
@@ -37,7 +37,7 @@ HISTORICAL_INTERVAL = 86400  # 24 hours
 # Delay between API calls to avoid rate limiting (seconds)
 API_CALL_DELAY = 2
 
-# Backoff time when rate limited (seconds) - 10 minutes to let Open-Meteo cool down
+# Backoff time when rate limited (seconds) - 10 minutes to let API cool down
 RATE_LIMIT_BACKOFF = 600
 
 
@@ -265,13 +265,13 @@ class WeatherPoller:
         logger.info("WeatherPoller: NWS updated")
 
     def _poll_openmeteo(self, local_today: date):
-        """Poll OpenMeteo for days 0-15, including hourly data (2 API calls total)."""
-        logger.info("WeatherPoller: Polling OpenMeteo (batch)")
+        """Poll Visual Crossing for days 0-14, including hourly data (2 API calls total)."""
+        logger.info("WeatherPoller: Polling Visual Crossing (batch)")
         lat, lon = self.service.nws_location
 
-        # Daily forecast for days 0-15 (ONE API call)
+        # Daily forecast for days 0-14 (ONE API call)
         try:
-            results = self.service.fetch_openmeteo_batch(local_today)
+            results = self.service.fetch_visualcrossing_batch(local_today)
             for target_date, data in results:
                 self.service._save_to_db(
                     'openmeteo',
@@ -280,19 +280,19 @@ class WeatherPoller:
                     lat=lat,
                     lon=lon,
                 )
-            logger.info(f"WeatherPoller: OpenMeteo daily updated ({len(results)} days)")
+            logger.info(f"WeatherPoller: Visual Crossing daily updated ({len(results)} days)")
         except Exception as e:
             error_str = str(e).lower()
             if 'rate limit' in error_str or '429' in error_str:
                 self._set_rate_limited()
                 return
-            logger.warning(f"WeatherPoller: OpenMeteo daily poll failed: {e}")
+            logger.warning(f"WeatherPoller: Visual Crossing daily poll failed: {e}")
 
         time.sleep(API_CALL_DELAY)
 
-        # Hourly forecast for days 0-15 (ONE API call)
+        # Hourly forecast for days 0-14 (ONE API call)
         try:
-            results = self.service.fetch_hourly_batch(local_today, days=16)
+            results = self.service.fetch_visualcrossing_hourly_batch(local_today, days=15)
             for target_date, data in results:
                 self.service._save_to_db(
                     'hourly',
@@ -301,7 +301,7 @@ class WeatherPoller:
                     lat=lat,
                     lon=lon,
                 )
-            logger.info(f"WeatherPoller: OpenMeteo hourly updated ({len(results)} days)")
+            logger.info(f"WeatherPoller: Visual Crossing hourly updated ({len(results)} days)")
         except Exception as e:
             error_str = str(e).lower()
             if 'rate limit' in error_str or '429' in error_str:
@@ -309,7 +309,7 @@ class WeatherPoller:
                 return
             logger.warning(f"WeatherPoller: Hourly poll failed: {e}")
 
-        logger.info("WeatherPoller: OpenMeteo updated")
+        logger.info("WeatherPoller: Visual Crossing updated")
 
     def _poll_historical(self, local_today: date):
         """Poll historical data from 1st of month to yesterday."""
@@ -341,7 +341,7 @@ class WeatherPoller:
 
             if not exists:
                 try:
-                    data = self.service._fetch_historical_weather(current)
+                    data = self.service.fetch_visualcrossing_historical(current)
                     if data:
                         self.service._save_to_db(
                             'historical',
