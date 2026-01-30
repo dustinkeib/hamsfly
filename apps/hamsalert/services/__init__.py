@@ -9,7 +9,7 @@ from .weather import (
     WeatherSource,
     TafForecastData,
     NwsForecastData,
-    OpenMeteoForecastData,
+    ExtendedForecastData,
     UnavailableWeatherData,
 )
 
@@ -24,6 +24,6 @@ __all__ = [
     'WeatherSource',
     'TafForecastData',
     'NwsForecastData',
-    'OpenMeteoForecastData',
+    'ExtendedForecastData',
     'UnavailableWeatherData',
 ]

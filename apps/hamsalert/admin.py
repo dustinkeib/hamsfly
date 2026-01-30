@@ -62,7 +62,7 @@ def _poll_all(request):
         # Visual Crossing daily
         daily_results = service.fetch_visualcrossing_batch(local_today)
         for target, data in daily_results:
-            service._save_to_db('openmeteo', target, service._serialize_openmeteo_data(data), lat=lat, lon=lon)
+            service._save_to_db('extended', target, service._serialize_extended_data(data), lat=lat, lon=lon)
         results.append(f'Daily ({len(daily_results)} days)')
 
         time.sleep(2)
@@ -131,7 +131,7 @@ def _poll_daily(request):
     try:
         results = service.fetch_visualcrossing_batch(local_today)
         for target, data in results:
-            service._save_to_db('openmeteo', target, service._serialize_openmeteo_data(data), lat=lat, lon=lon)
+            service._save_to_db('extended', target, service._serialize_extended_data(data), lat=lat, lon=lon)
         return True, f"Daily forecast updated ({len(results)} days)"
     except Exception as e:
         return False, f"Daily poll failed: {e}"
@@ -174,7 +174,7 @@ POLL_ACTIONS = {
     'metar': ('METAR', _poll_metar),
     'taf': ('TAF', _poll_taf),
     'nws': ('NWS', _poll_nws),
-    'openmeteo': ('Daily', _poll_daily),
+    'extended': ('Daily', _poll_daily),
     'hourly': ('Hourly', _poll_hourly),
     'historical': ('Historical', _poll_historical),
 }

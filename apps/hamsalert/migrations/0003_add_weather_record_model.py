@@ -14,7 +14,7 @@ class Migration(migrations.Migration):
             name='WeatherRecord',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('weather_type', models.CharField(choices=[('metar', 'METAR'), ('taf', 'TAF'), ('nws', 'NWS'), ('openmeteo', 'Open-Meteo'), ('hourly', 'Hourly'), ('historical', 'Historical')], db_index=True, max_length=20)),
+                ('weather_type', models.CharField(choices=[('metar', 'METAR'), ('taf', 'TAF'), ('nws', 'NWS'), ('extended', 'Extended'), ('hourly', 'Hourly'), ('historical', 'Historical')], db_index=True, max_length=20)),
                 ('target_date', models.DateField(db_index=True)),
                 ('latitude', models.DecimalField(blank=True, decimal_places=6, max_digits=9, null=True)),
                 ('longitude', models.DecimalField(blank=True, decimal_places=6, max_digits=9, null=True)),

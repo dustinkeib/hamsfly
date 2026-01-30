@@ -290,7 +290,7 @@ class WeatherServiceConfigTests(TestCase):
         self.assertEqual(service.taf_cache_ttl, 1800)
         self.assertEqual(service.nws_cache_ttl, 3600)
         self.assertEqual(service.visualcrossing_cache_ttl, 7200)
-        self.assertEqual(service.openmeteo_cache_ttl, 7200)  # Alias
+        self.assertEqual(service.extended_cache_ttl, 7200)  # Alias
 
 
 class WeatherServiceNWSParsingTests(TestCase):
@@ -366,8 +366,8 @@ class RateLimitCounterTests(TestCase):
         """Request allowed when no recent records exist."""
         self.assertTrue(self.service._check_rate_limit())
 
-    def test_check_rate_limit_counts_openmeteo_records(self):
-        """Rate limit counts openmeteo, hourly, and historical record types."""
+    def test_check_rate_limit_counts_extended_records(self):
+        """Rate limit counts extended, hourly, and historical record types."""
         from apps.hamsalert.models import WeatherRecord
         from decimal import Decimal
         from datetime import date, timedelta
@@ -376,7 +376,7 @@ class RateLimitCounterTests(TestCase):
         # Create some records (well under limit)
         for i in range(3):
             WeatherRecord.objects.create(
-                weather_type='openmeteo',
+                weather_type='extended',
                 target_date=date.today() + timedelta(days=i),  # Different dates to avoid unique constraint
                 latitude=Decimal('40.9781'),
                 longitude=Decimal('-124.1086'),
@@ -387,13 +387,13 @@ class RateLimitCounterTests(TestCase):
         # Should still allow since we're well under threshold
         self.assertTrue(self.service._check_rate_limit())
 
-    def test_check_rate_limit_ignores_non_openmeteo_records(self):
+    def test_check_rate_limit_ignores_non_extended_records(self):
         """Rate limit does not count METAR, TAF, or NWS records."""
         from apps.hamsalert.models import WeatherRecord
         from datetime import date, timedelta
         from django.utils import timezone
 
-        # Create many non-Open-Meteo records (METAR, TAF, NWS)
+        # Create many non-Visual Crossing records (METAR, TAF, NWS)
         for i in range(100):
             WeatherRecord.objects.create(
                 weather_type='metar',
@@ -421,7 +421,7 @@ class RateLimitRequestIntegrationTests(TestCase):
 
     @patch('httpx.Client')
     def test_make_request_skips_rate_limit_for_other_urls(self, mock_client_class):
-        """Rate limit NOT checked for non-Open-Meteo URLs."""
+        """Rate limit NOT checked for non-Visual Crossing URLs."""
         # Mock successful response
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -431,7 +431,7 @@ class RateLimitRequestIntegrationTests(TestCase):
         mock_client_instance.__exit__ = MagicMock(return_value=False)
         mock_client_class.return_value = mock_client_instance
 
-        # Should NOT raise for non-Open-Meteo URL even with rate limit check
+        # Should NOT raise for non-Visual Crossing URL even with rate limit check
         response = self.service._make_request_with_retry(
             'https://api.weather.gov/points/40.0,-124.0',
             params={},

@@ -28,7 +28,7 @@ class WeatherRecord(models.Model):
         METAR = 'metar', 'METAR'
         TAF = 'taf', 'TAF'
         NWS = 'nws', 'NWS'
-        OPENMETEO = 'openmeteo', 'Open-Meteo'
+        EXTENDED = 'extended', 'Extended'
         HOURLY = 'hourly', 'Hourly'
         HISTORICAL = 'historical', 'Historical'
 

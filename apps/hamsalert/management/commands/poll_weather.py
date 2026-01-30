@@ -117,9 +117,9 @@ class Command(BaseCommand):
         results = service.fetch_visualcrossing_batch(local_today)
         for target_date, data in results:
             service._save_to_db(
-                'openmeteo',
+                'extended',
                 target_date,
-                service._serialize_openmeteo_data(data),
+                service._serialize_extended_data(data),
                 lat=lat,
                 lon=lon,
             )

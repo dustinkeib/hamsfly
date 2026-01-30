@@ -35,7 +35,7 @@ class WeatherSource(Enum):
     METAR = 'metar'
     TAF = 'taf'
     NWS = 'nws'
-    OPENMETEO = 'openmeteo'
+    EXTENDED = 'extended'
     HISTORICAL = 'historical'
     UNAVAILABLE = 'unavailable'
 
@@ -100,7 +100,7 @@ def calculate_rc_assessment(
     """
     Calculate R/C flying assessment from weather parameters.
 
-    Works with all weather sources (METAR, TAF, NWS, Open-Meteo).
+    Works with all weather sources (METAR, TAF, NWS, Visual Crossing).
     """
     reasons = []
     rating = 'good'
@@ -416,8 +416,8 @@ class NwsForecastData:
 
 
 @dataclass
-class OpenMeteoForecastData:
-    """Open-Meteo extended forecast data for a specific date."""
+class ExtendedForecastData:
+    """Extended forecast data for a specific date (Visual Crossing)."""
     location: tuple[float, float]  # lat, lon
     target_date: date
     wind: WindData
@@ -426,7 +426,7 @@ class OpenMeteoForecastData:
     precipitation_probability: Optional[int] = None
     cached_at: datetime = field(default_factory=timezone.now)
     from_cache: bool = False
-    source: WeatherSource = WeatherSource.OPENMETEO
+    source: WeatherSource = WeatherSource.EXTENDED
 
     @property
     def temperature_high_f(self) -> Optional[int]:
@@ -467,7 +467,7 @@ class OpenMeteoForecastData:
 
 @dataclass
 class HourlyForecastEntry:
-    """Single hour of Open-Meteo hourly forecast data."""
+    """Single hour of hourly forecast data."""
     time: datetime
     temperature_c: Optional[float] = None
     wind_speed_kmh: Optional[float] = None
@@ -516,7 +516,7 @@ class HourlyForecastEntry:
 
 @dataclass
 class HourlyForecastData:
-    """Hourly forecast data from Open-Meteo for a single day."""
+    """Hourly forecast data for a single day."""
     location: tuple[float, float]
     target_date: date
     hours: list[HourlyForecastEntry] = field(default_factory=list)
@@ -526,7 +526,7 @@ class HourlyForecastData:
 
 @dataclass
 class HistoricalWeatherData:
-    """Historical weather data from Open-Meteo Archive API."""
+    """Historical weather data from archive API."""
     location: tuple[float, float]  # lat, lon
     target_date: date
     wind: WindData
@@ -582,7 +582,7 @@ class UnavailableWeatherData:
 
 
 # Type alias for all weather data types
-AnyWeatherData = WeatherData | TafForecastData | NwsForecastData | OpenMeteoForecastData | HistoricalWeatherData | UnavailableWeatherData
+AnyWeatherData = WeatherData | TafForecastData | NwsForecastData | ExtendedForecastData | HistoricalWeatherData | UnavailableWeatherData
 
 
 @dataclass
@@ -592,7 +592,7 @@ class CompositeWeatherData:
     metar: Optional[WeatherData] = None
     taf: Optional[TafForecastData] = None
     nws: Optional[NwsForecastData] = None
-    openmeteo: Optional[OpenMeteoForecastData] = None
+    extended: Optional[ExtendedForecastData] = None
     historical: Optional[HistoricalWeatherData] = None
     cached_at: datetime = field(default_factory=timezone.now)
     source: WeatherSource = WeatherSource.METAR  # Primary source for compatibility
@@ -607,23 +607,23 @@ class CompositeWeatherData:
             result.append(WeatherSource.TAF)
         if self.nws:
             result.append(WeatherSource.NWS)
-        if self.openmeteo:
-            result.append(WeatherSource.OPENMETEO)
+        if self.extended:
+            result.append(WeatherSource.EXTENDED)
         if self.historical:
             result.append(WeatherSource.HISTORICAL)
         return result
 
     @property
     def wind(self) -> Optional[WindData]:
-        """Best available wind data (METAR > TAF > NWS > OpenMeteo > Historical)."""
+        """Best available wind data (METAR > TAF > NWS > Extended > Historical)."""
         if self.metar:
             return self.metar.wind
         if self.taf:
             return self.taf.wind
         if self.nws:
             return self.nws.wind
-        if self.openmeteo:
-            return self.openmeteo.wind
+        if self.extended:
+            return self.extended.wind
         if self.historical:
             return self.historical.wind
         return None
@@ -637,21 +637,21 @@ class CompositeWeatherData:
             return WeatherSource.TAF
         if self.nws:
             return WeatherSource.NWS
-        if self.openmeteo:
-            return WeatherSource.OPENMETEO
+        if self.extended:
+            return WeatherSource.EXTENDED
         if self.historical:
             return WeatherSource.HISTORICAL
         return None
 
     @property
     def temperature_f(self) -> Optional[int]:
-        """Best available temperature in Fahrenheit (METAR > NWS > OpenMeteo > Historical)."""
+        """Best available temperature in Fahrenheit (METAR > NWS > Extended > Historical)."""
         if self.metar and self.metar.temperature_f is not None:
             return self.metar.temperature_f
         if self.nws and self.nws.temperature_high is not None:
             return self.nws.temperature_high
-        if self.openmeteo and self.openmeteo.temperature_high_f is not None:
-            return self.openmeteo.temperature_high_f
+        if self.extended and self.extended.temperature_high_f is not None:
+            return self.extended.temperature_high_f
         if self.historical and self.historical.temperature_high_f is not None:
             return self.historical.temperature_high_f
         return None
@@ -663,8 +663,8 @@ class CompositeWeatherData:
             return WeatherSource.METAR
         if self.nws and self.nws.temperature_high is not None:
             return WeatherSource.NWS
-        if self.openmeteo and self.openmeteo.temperature_high_f is not None:
-            return WeatherSource.OPENMETEO
+        if self.extended and self.extended.temperature_high_f is not None:
+            return WeatherSource.EXTENDED
         if self.historical and self.historical.temperature_high_f is not None:
             return WeatherSource.HISTORICAL
         return None
@@ -674,8 +674,8 @@ class CompositeWeatherData:
         """High temperature for forecast days or historical."""
         if self.nws and self.nws.temperature_high is not None:
             return self.nws.temperature_high
-        if self.openmeteo and self.openmeteo.temperature_high_f is not None:
-            return self.openmeteo.temperature_high_f
+        if self.extended and self.extended.temperature_high_f is not None:
+            return self.extended.temperature_high_f
         if self.historical and self.historical.temperature_high_f is not None:
             return self.historical.temperature_high_f
         return None
@@ -685,8 +685,8 @@ class CompositeWeatherData:
         """Low temperature for forecast days or historical."""
         if self.nws and self.nws.temperature_low is not None:
             return self.nws.temperature_low
-        if self.openmeteo and self.openmeteo.temperature_low_f is not None:
-            return self.openmeteo.temperature_low_f
+        if self.extended and self.extended.temperature_low_f is not None:
+            return self.extended.temperature_low_f
         if self.historical and self.historical.temperature_low_f is not None:
             return self.historical.temperature_low_f
         return None
@@ -729,11 +729,11 @@ class CompositeWeatherData:
 
     @property
     def precipitation_probability(self) -> Optional[int]:
-        """Best available precipitation probability (NWS > OpenMeteo)."""
+        """Best available precipitation probability (NWS > Extended)."""
         if self.nws and self.nws.precipitation_probability is not None:
             return self.nws.precipitation_probability
-        if self.openmeteo and self.openmeteo.precipitation_probability is not None:
-            return self.openmeteo.precipitation_probability
+        if self.extended and self.extended.precipitation_probability is not None:
+            return self.extended.precipitation_probability
         return None
 
     @property
@@ -741,8 +741,8 @@ class CompositeWeatherData:
         """Source of precipitation probability."""
         if self.nws and self.nws.precipitation_probability is not None:
             return WeatherSource.NWS
-        if self.openmeteo and self.openmeteo.precipitation_probability is not None:
-            return WeatherSource.OPENMETEO
+        if self.extended and self.extended.precipitation_probability is not None:
+            return WeatherSource.EXTENDED
         return None
 
     @property
@@ -830,7 +830,7 @@ class CompositeWeatherData:
             return True
         if self.nws and self.nws.from_cache:
             return True
-        if self.openmeteo and self.openmeteo.from_cache:
+        if self.extended and self.extended.from_cache:
             return True
         if self.historical and self.historical.from_cache:
             return True
@@ -846,7 +846,7 @@ class CompositeWeatherData:
             labels.append('TAF')
         if self.nws:
             labels.append('NWS')
-        if self.openmeteo:
+        if self.extended:
             labels.append('Extended')
         if self.historical:
             labels.append('Historical')
@@ -893,19 +893,19 @@ class WeatherService:
         self.taf_cache_ttl = getattr(settings, 'WEATHER_TAF_CACHE_TTL', 3600)
         self.nws_cache_ttl = getattr(settings, 'WEATHER_NWS_CACHE_TTL', 7200)
         self.visualcrossing_cache_ttl = getattr(settings, 'WEATHER_VISUALCROSSING_CACHE_TTL', 14400)
-        self.openmeteo_cache_ttl = self.visualcrossing_cache_ttl  # Alias for compatibility
+        self.extended_cache_ttl = self.visualcrossing_cache_ttl  # Alias for compatibility
         self.historical_cache_ttl = getattr(settings, 'WEATHER_HISTORICAL_CACHE_TTL', 86400)  # 24 hours
 
         # Rate limiting settings (can be overridden via settings)
-        self.max_retries = getattr(settings, 'OPENMETEO_MAX_RETRIES', self.MAX_RETRIES)
-        self.base_delay = getattr(settings, 'OPENMETEO_BASE_DELAY', self.BASE_DELAY)
-        self.max_delay = getattr(settings, 'OPENMETEO_MAX_DELAY', self.MAX_DELAY)
+        self.max_retries = getattr(settings, 'WEATHER_MAX_RETRIES', self.MAX_RETRIES)
+        self.base_delay = getattr(settings, 'WEATHER_BASE_DELAY', self.BASE_DELAY)
+        self.max_delay = getattr(settings, 'WEATHER_MAX_DELAY', self.MAX_DELAY)
 
         # Global rate limit settings
-        self.rate_limit_per_minute = getattr(settings, 'OPENMETEO_RATE_LIMIT_PER_MINUTE', 600)
-        self.rate_limit_per_hour = getattr(settings, 'OPENMETEO_RATE_LIMIT_PER_HOUR', 5000)
-        self.rate_limit_per_day = getattr(settings, 'OPENMETEO_RATE_LIMIT_PER_DAY', 10000)
-        self.rate_limit_safety_margin = getattr(settings, 'OPENMETEO_RATE_LIMIT_SAFETY_MARGIN', 0.9)
+        self.rate_limit_per_minute = getattr(settings, 'WEATHER_RATE_LIMIT_PER_MINUTE', 600)
+        self.rate_limit_per_hour = getattr(settings, 'WEATHER_RATE_LIMIT_PER_HOUR', 5000)
+        self.rate_limit_per_day = getattr(settings, 'WEATHER_RATE_LIMIT_PER_DAY', 10000)
+        self.rate_limit_safety_margin = getattr(settings, 'WEATHER_RATE_LIMIT_SAFETY_MARGIN', 0.9)
 
     def _make_request_with_retry(
         self,
@@ -917,8 +917,8 @@ class WeatherService:
         """
         Make HTTP GET request with exponential backoff retry on 429/timeout errors.
 
-        For Open-Meteo URLs, also checks proactive rate limits before requesting
-        and increments counters after successful responses.
+        Checks proactive rate limits before requesting and increments counters
+        after successful responses.
 
         Args:
             url: The URL to request
@@ -930,15 +930,12 @@ class WeatherService:
             httpx.Response on success
 
         Raises:
-            RateLimitError if proactive rate limit threshold reached (Open-Meteo only)
+            RateLimitError if proactive rate limit threshold reached
             WeatherServiceError on failure after retries
         """
-        # Check if this is an Open-Meteo request
-        is_openmeteo = 'open-meteo.com' in url
-
-        # Proactive rate limit check for Open-Meteo
-        if is_openmeteo and not self._check_rate_limit():
-            raise RateLimitError("Open-Meteo rate limit threshold reached")
+        # Proactive rate limit check
+        if not self._check_rate_limit():
+            raise RateLimitError("Rate limit threshold reached")
 
         last_exception: Optional[Exception] = None
 
@@ -1016,7 +1013,7 @@ class WeatherService:
 
     def _check_rate_limit(self) -> bool:
         """
-        Check if we're under the Open-Meteo rate limits.
+        Check if we're under the rate limits.
 
         Counts recent WeatherRecord entries to track API calls.
         Returns:
@@ -1025,12 +1022,12 @@ class WeatherService:
         from apps.hamsalert.models import WeatherRecord
 
         now = timezone.now()
-        openmeteo_types = ['openmeteo', 'hourly', 'historical']
+        extended_types = ['extended', 'hourly', 'historical']
 
         # Count requests in last minute
         minute_ago = now - timedelta(minutes=1)
         minute_count = WeatherRecord.objects.filter(
-            weather_type__in=openmeteo_types,
+            weather_type__in=extended_types,
             fetched_at__gte=minute_ago
         ).count()
 
@@ -1044,7 +1041,7 @@ class WeatherService:
         # Count requests in last hour
         hour_ago = now - timedelta(hours=1)
         hour_count = WeatherRecord.objects.filter(
-            weather_type__in=openmeteo_types,
+            weather_type__in=extended_types,
             fetched_at__gte=hour_ago
         ).count()
 
@@ -1058,7 +1055,7 @@ class WeatherService:
         # Count requests in last day
         day_ago = now - timedelta(days=1)
         day_count = WeatherRecord.objects.filter(
-            weather_type__in=openmeteo_types,
+            weather_type__in=extended_types,
             fetched_at__gte=day_ago
         ).count()
 
@@ -1084,11 +1081,11 @@ class WeatherService:
         Retrieve weather data from database.
 
         Args:
-            weather_type: Type of weather data (metar, taf, nws, openmeteo, hourly, historical)
+            weather_type: Type of weather data (metar, taf, nws, extended, hourly, historical)
             target_date: The date the weather is for
             station: Station identifier (for METAR/TAF)
-            lat: Latitude (for NWS/OpenMeteo)
-            lon: Longitude (for NWS/OpenMeteo)
+            lat: Latitude (for NWS/Extended)
+            lon: Longitude (for NWS/Extended)
             max_age_seconds: Maximum age of data to return (None = any age)
 
         Returns:
@@ -1138,8 +1135,8 @@ class WeatherService:
             target_date: The date the weather is for
             data: Weather data dict to store
             station: Station identifier (for METAR/TAF)
-            lat: Latitude (for NWS/OpenMeteo)
-            lon: Longitude (for NWS/OpenMeteo)
+            lat: Latitude (for NWS/Extended)
+            lon: Longitude (for NWS/Extended)
             api_response_time_ms: API response time in milliseconds
         """
         from apps.hamsalert.models import WeatherRecord
@@ -1193,8 +1190,8 @@ class WeatherService:
                 logger.warning(f"Failed to save weather to DB: {e}")
                 return
 
-    def _serialize_openmeteo_data(self, data: OpenMeteoForecastData) -> dict:
-        """Serialize OpenMeteoForecastData to dict for DB storage."""
+    def _serialize_extended_data(self, data: ExtendedForecastData) -> dict:
+        """Serialize ExtendedForecastData to dict for DB storage."""
         return {
             'location': list(data.location),
             'target_date': data.target_date.isoformat(),
@@ -1209,10 +1206,10 @@ class WeatherService:
             'precipitation_probability': data.precipitation_probability,
         }
 
-    def _deserialize_openmeteo_data(self, data: dict) -> OpenMeteoForecastData:
-        """Deserialize dict to OpenMeteoForecastData."""
+    def _deserialize_extended_data(self, data: dict) -> ExtendedForecastData:
+        """Deserialize dict to ExtendedForecastData."""
         wind_data = data['wind']
-        return OpenMeteoForecastData(
+        return ExtendedForecastData(
             location=tuple(data['location']),
             target_date=date.fromisoformat(data['target_date']),
             wind=WindData(
@@ -1226,7 +1223,7 @@ class WeatherService:
             precipitation_probability=data.get('precipitation_probability'),
             cached_at=timezone.now(),
             from_cache=True,
-            source=WeatherSource.OPENMETEO,
+            source=WeatherSource.EXTENDED,
         )
 
     def _serialize_hourly_data(self, data: HourlyForecastData) -> dict:
@@ -1560,7 +1557,7 @@ class WeatherService:
         - Today: METAR (current conditions)
         - Tomorrow: TAF (aviation forecast)
         - 2-7 days: NWS API
-        - 8-15 days: Open-Meteo
+        - 8-15 days: Visual Crossing Extended
         - >15 days: Unavailable
         """
         local_today = datetime.now(self.local_timezone).date()
@@ -1575,7 +1572,7 @@ class WeatherService:
         if days_out <= 7:
             return self._get_nws_forecast(target_date)
         if days_out <= 15:
-            return self._get_openmeteo_forecast(target_date)
+            return self._get_extended_forecast(target_date)
         return UnavailableWeatherData("Forecast not available beyond 15 days")
 
     def get_all_weather_for_date(
@@ -1587,11 +1584,11 @@ class WeatherService:
         Fetch weather data from ALL applicable sources for a date.
 
         Data availability by day:
-        - Past dates: Historical (Open-Meteo Archive)
-        - Day 0 (today): METAR + TAF + NWS + OpenMeteo
-        - Day 1 (tomorrow): TAF + NWS + OpenMeteo
-        - Days 2-7: NWS + OpenMeteo
-        - Days 8-15: OpenMeteo only
+        - Past dates: Historical (Visual Crossing Archive)
+        - Day 0 (today): METAR + TAF + NWS + Extended
+        - Day 1 (tomorrow): TAF + NWS + Extended
+        - Days 2-7: NWS + Extended
+        - Days 8-15: Extended only
         - >15 days: None
 
         Uses ThreadPoolExecutor for parallel fetches on cache miss.
@@ -1620,14 +1617,14 @@ class WeatherService:
         fetch_metar = days_out == 0
         fetch_taf = days_out <= 1
         fetch_nws = days_out <= 7
-        fetch_openmeteo = days_out <= 15
+        fetch_extended = days_out <= 15
 
         # Prepare fetch tasks
         results = {
             'metar': None,
             'taf': None,
             'nws': None,
-            'openmeteo': None,
+            'extended': None,
         }
 
         def fetch_metar_safe():
@@ -1651,11 +1648,11 @@ class WeatherService:
                 logger.warning(f"NWS fetch failed: {e}")
                 return None
 
-        def fetch_openmeteo_safe():
+        def fetch_extended_safe():
             try:
-                return self._get_openmeteo_forecast(target_date)
+                return self._get_extended_forecast(target_date)
             except WeatherServiceError as e:
-                logger.warning(f"OpenMeteo fetch failed: {e}")
+                logger.warning(f"Extended forecast fetch failed: {e}")
                 return None
 
         # Use ThreadPoolExecutor for parallel fetches
@@ -1667,8 +1664,8 @@ class WeatherService:
                 futures[executor.submit(fetch_taf_safe)] = 'taf'
             if fetch_nws:
                 futures[executor.submit(fetch_nws_safe)] = 'nws'
-            if fetch_openmeteo:
-                futures[executor.submit(fetch_openmeteo_safe)] = 'openmeteo'
+            if fetch_extended:
+                futures[executor.submit(fetch_extended_safe)] = 'extended'
 
             for future in as_completed(futures):
                 source_name = futures[future]
@@ -1685,8 +1682,8 @@ class WeatherService:
             primary_source = WeatherSource.TAF
         elif results['nws']:
             primary_source = WeatherSource.NWS
-        elif results['openmeteo']:
-            primary_source = WeatherSource.OPENMETEO
+        elif results['extended']:
+            primary_source = WeatherSource.EXTENDED
         else:
             primary_source = WeatherSource.UNAVAILABLE
 
@@ -1695,7 +1692,7 @@ class WeatherService:
             metar=results['metar'],
             taf=results['taf'],
             nws=results['nws'],
-            openmeteo=results['openmeteo'],
+            extended=results['extended'],
             cached_at=timezone.now(),
             source=primary_source,
         )
@@ -1722,7 +1719,7 @@ class WeatherService:
             'metar': None,
             'taf': None,
             'nws': None,
-            'openmeteo': None,
+            'extended': None,
             'historical': None,
         }
 
@@ -1750,11 +1747,11 @@ class WeatherService:
                 if db_data:
                     results['nws'] = self._deserialize_nws_data(db_data)
 
-            # Days 0-15: OpenMeteo
+            # Days 0-15: Extended forecast
             if days_out <= 15:
-                db_data = self._get_from_db('openmeteo', target_date, lat=lat, lon=lon)
+                db_data = self._get_from_db('extended', target_date, lat=lat, lon=lon)
                 if db_data:
-                    results['openmeteo'] = self._deserialize_openmeteo_data(db_data)
+                    results['extended'] = self._deserialize_extended_data(db_data)
 
         # Check if we have any data
         has_data = any(results.values())
@@ -1768,8 +1765,8 @@ class WeatherService:
             primary_source = WeatherSource.TAF
         elif results['nws']:
             primary_source = WeatherSource.NWS
-        elif results['openmeteo']:
-            primary_source = WeatherSource.OPENMETEO
+        elif results['extended']:
+            primary_source = WeatherSource.EXTENDED
         elif results['historical']:
             primary_source = WeatherSource.HISTORICAL
         else:
@@ -1780,7 +1777,7 @@ class WeatherService:
             metar=results['metar'],
             taf=results['taf'],
             nws=results['nws'],
-            openmeteo=results['openmeteo'],
+            extended=results['extended'],
             historical=results['historical'],
             cached_at=timezone.now(),
             source=primary_source,
@@ -1831,7 +1828,7 @@ class WeatherService:
             ).delete()
         if days_out <= 15:
             WeatherRecord.objects.filter(
-                weather_type='openmeteo', target_date=target_date
+                weather_type='extended', target_date=target_date
             ).delete()
             WeatherRecord.objects.filter(
                 weather_type='hourly', target_date=target_date
@@ -2341,15 +2338,15 @@ class WeatherService:
             logger.error(f"Failed to parse NWS response: {e}")
             raise WeatherServiceError(f"Failed to parse NWS data: {e}")
 
-    def _get_openmeteo_forecast(self, target_date: date) -> Optional[OpenMeteoForecastData]:
+    def _get_extended_forecast(self, target_date: date) -> Optional[ExtendedForecastData]:
         """Get extended forecast for a target date with DB cache (uses Visual Crossing)."""
         lat, lon = self.nws_location
-        ttl = self.openmeteo_cache_ttl
+        ttl = self.extended_cache_ttl
 
         # 1. Check DB cache
-        db_data = self._get_from_db('openmeteo', target_date, lat=lat, lon=lon, max_age_seconds=ttl)
+        db_data = self._get_from_db('extended', target_date, lat=lat, lon=lon, max_age_seconds=ttl)
         if db_data:
-            data = self._deserialize_openmeteo_data(db_data)
+            data = self._deserialize_extended_data(db_data)
             return data
 
         # 2. Fetch from Visual Crossing API
@@ -2361,20 +2358,20 @@ class WeatherService:
 
             if data:
                 self._save_to_db(
-                    'openmeteo', target_date, self._serialize_openmeteo_data(data),
+                    'extended', target_date, self._serialize_extended_data(data),
                     lat=lat, lon=lon, api_response_time_ms=response_time_ms
                 )
             return data
 
         except WeatherServiceError:
             # 3. Fallback to stale DB data
-            stale_data = self._get_from_db('openmeteo', target_date, lat=lat, lon=lon, max_age_seconds=None)
+            stale_data = self._get_from_db('extended', target_date, lat=lat, lon=lon, max_age_seconds=None)
             if stale_data:
                 logger.warning(f"Using stale DB data for daily {lat},{lon} on {target_date}")
-                return self._deserialize_openmeteo_data(stale_data)
+                return self._deserialize_extended_data(stale_data)
             raise
 
-    def _fetch_visualcrossing_daily(self, target_date: date) -> Optional[OpenMeteoForecastData]:
+    def _fetch_visualcrossing_daily(self, target_date: date) -> Optional[ExtendedForecastData]:
         """Fetch daily forecast from Visual Crossing API for a single date."""
         if not self.visualcrossing_api_key:
             raise WeatherServiceError("Visual Crossing API key not configured")
@@ -2402,7 +2399,7 @@ class WeatherService:
 
         return self._parse_visualcrossing_daily_response(response.json(), target_date)
 
-    def _parse_visualcrossing_daily_response(self, data: dict, target_date: date) -> Optional[OpenMeteoForecastData]:
+    def _parse_visualcrossing_daily_response(self, data: dict, target_date: date) -> Optional[ExtendedForecastData]:
         """Parse Visual Crossing daily API response for a single date."""
         try:
             days = data.get('days', [])
@@ -2429,7 +2426,7 @@ class WeatherService:
                 direction_repr=str(round(wind_dir)) if wind_dir is not None else 'VRB',
             )
 
-            return OpenMeteoForecastData(
+            return ExtendedForecastData(
                 location=self.nws_location,
                 target_date=target_date,
                 wind=wind,
@@ -2437,15 +2434,15 @@ class WeatherService:
                 temperature_low=round(temp_min) if temp_min is not None else None,
                 precipitation_probability=round(precip_prob) if precip_prob is not None else None,
                 cached_at=timezone.now(),
-                source=WeatherSource.OPENMETEO,
+                source=WeatherSource.EXTENDED,
             )
 
         except (KeyError, TypeError, IndexError) as e:
             logger.error(f"Failed to parse Visual Crossing response: {e}")
             raise WeatherServiceError(f"Failed to parse Visual Crossing data: {e}")
 
-    def _parse_openmeteo_response(self, data: dict, target_date: date) -> Optional[OpenMeteoForecastData]:
-        """Parse Open-Meteo API response."""
+    def _parse_extended_response(self, data: dict, target_date: date) -> Optional[ExtendedForecastData]:
+        """Parse Visual Crossing API response."""
         try:
             daily = data.get('daily', {})
             dates = daily.get('time', [])
@@ -2476,7 +2473,7 @@ class WeatherService:
                 direction_repr=str(wind_dir) if wind_dir else 'VRB',
             )
 
-            return OpenMeteoForecastData(
+            return ExtendedForecastData(
                 location=self.nws_location,
                 target_date=target_date,
                 wind=wind,
@@ -2484,17 +2481,17 @@ class WeatherService:
                 temperature_low=round(temp_min) if temp_min is not None else None,
                 precipitation_probability=precip_prob,
                 cached_at=timezone.now(),
-                source=WeatherSource.OPENMETEO,
+                source=WeatherSource.EXTENDED,
             )
 
         except (KeyError, TypeError, IndexError) as e:
-            logger.error(f"Failed to parse Open-Meteo response: {e}")
-            raise WeatherServiceError(f"Failed to parse Open-Meteo data: {e}")
+            logger.error(f"Failed to parse Visual Crossing response: {e}")
+            raise WeatherServiceError(f"Failed to parse Visual Crossing data: {e}")
 
     def get_hourly_forecast(self, target_date: date) -> Optional['HourlyForecastData']:
         """Get hourly forecast data for a target date (0-14 days out) with DB cache."""
         lat, lon = self.nws_location
-        ttl = self.openmeteo_cache_ttl
+        ttl = self.extended_cache_ttl
 
         # 1. Check DB cache
         db_data = self._get_from_db('hourly', target_date, lat=lat, lon=lon, max_age_seconds=ttl)
@@ -2659,7 +2656,7 @@ class WeatherService:
             ).delete()
         elif days_out <= 16:
             WeatherRecord.objects.filter(
-                weather_type='openmeteo', target_date=target_date
+                weather_type='extended', target_date=target_date
             ).delete()
             WeatherRecord.objects.filter(
                 weather_type='hourly', target_date=target_date
@@ -2673,11 +2670,11 @@ class WeatherService:
     # Visual Crossing batch fetch methods for background poller
     # -------------------------------------------------------------------------
 
-    def fetch_visualcrossing_batch(self, local_today: date) -> list[tuple[date, OpenMeteoForecastData]]:
+    def fetch_visualcrossing_batch(self, local_today: date) -> list[tuple[date, ExtendedForecastData]]:
         """
         Fetch daily forecast from Visual Crossing for 15 days in ONE API call.
         Returns list of (target_date, data) tuples for each day.
-        Uses OpenMeteoForecastData for compatibility with existing code.
+        Uses ExtendedForecastData for compatibility with existing code.
         """
         if not self.visualcrossing_api_key:
             raise WeatherServiceError("Visual Crossing API key not configured")
@@ -2705,7 +2702,7 @@ class WeatherService:
 
         return self._parse_visualcrossing_batch_response(response.json())
 
-    def _parse_visualcrossing_batch_response(self, data: dict) -> list[tuple[date, OpenMeteoForecastData]]:
+    def _parse_visualcrossing_batch_response(self, data: dict) -> list[tuple[date, ExtendedForecastData]]:
         """Parse Visual Crossing API response and return all days."""
         results = []
         try:
@@ -2735,7 +2732,7 @@ class WeatherService:
                     direction_repr=str(round(wind_dir)) if wind_dir is not None else 'VRB',
                 )
 
-                forecast = OpenMeteoForecastData(
+                forecast = ExtendedForecastData(
                     location=self.nws_location,
                     target_date=target_date,
                     wind=wind,
@@ -2743,7 +2740,7 @@ class WeatherService:
                     temperature_low=round(temp_min) if temp_min is not None else None,
                     precipitation_probability=round(precip_prob) if precip_prob is not None else None,
                     cached_at=timezone.now(),
-                    source=WeatherSource.OPENMETEO,  # Keep same source for DB compatibility
+                    source=WeatherSource.EXTENDED,  # Keep same source for DB compatibility
                 )
                 results.append((target_date, forecast))
 

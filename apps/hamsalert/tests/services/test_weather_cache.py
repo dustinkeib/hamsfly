@@ -15,7 +15,7 @@ from apps.hamsalert.services.weather import (
     HistoricalWeatherData,
     NwsForecastData,
     NwsForecastPeriod,
-    OpenMeteoForecastData,
+    ExtendedForecastData,
     RateLimitError,
     TafForecastData,
     TafForecastPeriod,
@@ -37,39 +37,39 @@ class WeatherServiceDBCacheTests(TestCase):
         self.lat, self.lon = self.service.nws_location
 
     def test_get_from_db_returns_none_when_empty(self):
-        result = self.service._get_from_db('openmeteo', self.test_date, lat=self.lat, lon=self.lon)
+        result = self.service._get_from_db('extended', self.test_date, lat=self.lat, lon=self.lon)
         self.assertIsNone(result)
 
     def test_save_and_get_from_db(self):
         test_data = {'test': 'value', 'wind': {'speed': 10}}
         self.service._save_to_db(
-            'openmeteo',
+            'extended',
             self.test_date,
             test_data,
             lat=self.lat,
             lon=self.lon,
         )
 
-        result = self.service._get_from_db('openmeteo', self.test_date, lat=self.lat, lon=self.lon)
+        result = self.service._get_from_db('extended', self.test_date, lat=self.lat, lon=self.lon)
         self.assertEqual(result, test_data)
 
     def test_get_from_db_respects_max_age(self):
         test_data = {'test': 'old_value'}
-        self.service._save_to_db('openmeteo', self.test_date, test_data, lat=self.lat, lon=self.lon)
+        self.service._save_to_db('extended', self.test_date, test_data, lat=self.lat, lon=self.lon)
 
         # Manually age the record
-        WeatherRecord.objects.filter(weather_type='openmeteo').update(
+        WeatherRecord.objects.filter(weather_type='extended').update(
             fetched_at=timezone.now() - timedelta(hours=5)
         )
 
         # Should not find with max_age of 1 hour
         result = self.service._get_from_db(
-            'openmeteo', self.test_date, lat=self.lat, lon=self.lon, max_age_seconds=3600
+            'extended', self.test_date, lat=self.lat, lon=self.lon, max_age_seconds=3600
         )
         self.assertIsNone(result)
 
         # Should find with no max_age
-        result = self.service._get_from_db('openmeteo', self.test_date, lat=self.lat, lon=self.lon)
+        result = self.service._get_from_db('extended', self.test_date, lat=self.lat, lon=self.lon)
         self.assertEqual(result, test_data)
 
     def test_get_from_db_by_station(self):
@@ -87,21 +87,21 @@ class WeatherServiceDBCacheTests(TestCase):
         old_data = {'version': 'old'}
         new_data = {'version': 'new'}
 
-        self.service._save_to_db('openmeteo', self.test_date, old_data, lat=self.lat, lon=self.lon)
+        self.service._save_to_db('extended', self.test_date, old_data, lat=self.lat, lon=self.lon)
 
         # Age the first record
-        WeatherRecord.objects.filter(weather_type='openmeteo').update(
+        WeatherRecord.objects.filter(weather_type='extended').update(
             fetched_at=timezone.now() - timedelta(hours=1)
         )
 
-        self.service._save_to_db('openmeteo', self.test_date, new_data, lat=self.lat, lon=self.lon)
+        self.service._save_to_db('extended', self.test_date, new_data, lat=self.lat, lon=self.lon)
 
-        result = self.service._get_from_db('openmeteo', self.test_date, lat=self.lat, lon=self.lon)
+        result = self.service._get_from_db('extended', self.test_date, lat=self.lat, lon=self.lon)
         self.assertEqual(result, new_data)
 
     def test_save_to_db_records_api_response_time(self):
         self.service._save_to_db(
-            'openmeteo',
+            'extended',
             self.test_date,
             {'test': 'data'},
             lat=self.lat,
@@ -109,19 +109,19 @@ class WeatherServiceDBCacheTests(TestCase):
             api_response_time_ms=150,
         )
 
-        record = WeatherRecord.objects.get(weather_type='openmeteo')
+        record = WeatherRecord.objects.get(weather_type='extended')
         self.assertEqual(record.api_response_time_ms, 150)
 
 
-class OpenMeteoSerializationTests(TestCase):
-    """Tests for OpenMeteo data serialization/deserialization."""
+class ExtendedSerializationTests(TestCase):
+    """Tests for Extended forecast data serialization/deserialization."""
 
     def setUp(self):
         self.service = WeatherService()
         self.test_date = date.today() + timedelta(days=10)
 
-    def test_serialize_openmeteo_data(self):
-        data = OpenMeteoForecastData(
+    def test_serialize_extended_data(self):
+        data = ExtendedForecastData(
             location=(40.9781, -124.1086),
             target_date=self.test_date,
             wind=WindData(direction=270, speed=10, gust=15, direction_repr='270'),
@@ -130,7 +130,7 @@ class OpenMeteoSerializationTests(TestCase):
             precipitation_probability=30,
         )
 
-        serialized = self.service._serialize_openmeteo_data(data)
+        serialized = self.service._serialize_extended_data(data)
 
         self.assertEqual(serialized['location'], [40.9781, -124.1086])
         self.assertEqual(serialized['target_date'], self.test_date.isoformat())
@@ -141,7 +141,7 @@ class OpenMeteoSerializationTests(TestCase):
         self.assertEqual(serialized['temperature_low'], 14)
         self.assertEqual(serialized['precipitation_probability'], 30)
 
-    def test_deserialize_openmeteo_data(self):
+    def test_deserialize_extended_data(self):
         serialized = {
             'location': [40.9781, -124.1086],
             'target_date': self.test_date.isoformat(),
@@ -156,7 +156,7 @@ class OpenMeteoSerializationTests(TestCase):
             'precipitation_probability': 30,
         }
 
-        data = self.service._deserialize_openmeteo_data(serialized)
+        data = self.service._deserialize_extended_data(serialized)
 
         self.assertEqual(data.location, (40.9781, -124.1086))
         self.assertEqual(data.target_date, self.test_date)
@@ -169,7 +169,7 @@ class OpenMeteoSerializationTests(TestCase):
         self.assertTrue(data.from_cache)
 
     def test_roundtrip_serialization(self):
-        original = OpenMeteoForecastData(
+        original = ExtendedForecastData(
             location=(40.9781, -124.1086),
             target_date=self.test_date,
             wind=WindData(direction=180, speed=5, gust=None, direction_repr='180'),
@@ -178,8 +178,8 @@ class OpenMeteoSerializationTests(TestCase):
             precipitation_probability=10,
         )
 
-        serialized = self.service._serialize_openmeteo_data(original)
-        restored = self.service._deserialize_openmeteo_data(serialized)
+        serialized = self.service._serialize_extended_data(original)
+        restored = self.service._deserialize_extended_data(serialized)
 
         self.assertEqual(restored.location, original.location)
         self.assertEqual(restored.target_date, original.target_date)
@@ -309,7 +309,7 @@ class DBCacheIntegrationTests(TestCase):
     @patch.object(WeatherService, '_fetch_visualcrossing_daily')
     def test_cache_miss_fetches_from_api_and_stores(self, mock_fetch):
         """On cache miss, should fetch from API and store in DB."""
-        mock_data = OpenMeteoForecastData(
+        mock_data = ExtendedForecastData(
             location=(self.lat, self.lon),
             target_date=self.test_date,
             wind=WindData(direction=270, speed=10, gust=None, direction_repr='270'),
@@ -319,13 +319,13 @@ class DBCacheIntegrationTests(TestCase):
         )
         mock_fetch.return_value = mock_data
 
-        result = self.service._get_openmeteo_forecast(self.test_date)
+        result = self.service._get_extended_forecast(self.test_date)
 
         mock_fetch.assert_called_once()
         self.assertEqual(result.wind.speed, 10)
 
         # Verify stored in DB
-        self.assertEqual(WeatherRecord.objects.filter(weather_type='openmeteo').count(), 1)
+        self.assertEqual(WeatherRecord.objects.filter(weather_type='extended').count(), 1)
 
     @patch.object(WeatherService, '_fetch_visualcrossing_daily')
     def test_db_cache_hit_skips_api(self, mock_fetch):
@@ -339,9 +339,9 @@ class DBCacheIntegrationTests(TestCase):
             'temperature_low': 14,
             'precipitation_probability': 10,
         }
-        self.service._save_to_db('openmeteo', self.test_date, db_data, lat=self.lat, lon=self.lon)
+        self.service._save_to_db('extended', self.test_date, db_data, lat=self.lat, lon=self.lon)
 
-        result = self.service._get_openmeteo_forecast(self.test_date)
+        result = self.service._get_extended_forecast(self.test_date)
 
         mock_fetch.assert_not_called()
         self.assertEqual(result.wind.speed, 8)
@@ -359,17 +359,17 @@ class DBCacheIntegrationTests(TestCase):
             'temperature_low': 16,
             'precipitation_probability': 20,
         }
-        self.service._save_to_db('openmeteo', self.test_date, stale_data, lat=self.lat, lon=self.lon)
+        self.service._save_to_db('extended', self.test_date, stale_data, lat=self.lat, lon=self.lon)
 
         # Age the record beyond TTL
-        WeatherRecord.objects.filter(weather_type='openmeteo').update(
+        WeatherRecord.objects.filter(weather_type='extended').update(
             fetched_at=timezone.now() - timedelta(hours=10)
         )
 
         # Simulate API failure
         mock_fetch.side_effect = WeatherServiceError("API unavailable")
 
-        result = self.service._get_openmeteo_forecast(self.test_date)
+        result = self.service._get_extended_forecast(self.test_date)
 
         self.assertEqual(result.wind.speed, 12)
         self.assertTrue(result.from_cache)
@@ -380,11 +380,11 @@ class DBCacheIntegrationTests(TestCase):
         mock_fetch.side_effect = WeatherServiceError("API unavailable")
 
         with self.assertRaises(WeatherServiceError):
-            self.service._get_openmeteo_forecast(self.test_date)
+            self.service._get_extended_forecast(self.test_date)
 
     @patch.object(WeatherService, '_fetch_visualcrossing_daily')
     def test_rate_limit_error_triggers_stale_fallback(self, mock_fetch):
-        """RateLimitError causes _get_openmeteo_forecast to return stale DB data."""
+        """RateLimitError causes _get_extended_forecast to return stale DB data."""
         # Store stale data in DB
         stale_data = {
             'location': [self.lat, self.lon],
@@ -394,17 +394,17 @@ class DBCacheIntegrationTests(TestCase):
             'temperature_low': 14,
             'precipitation_probability': 25,
         }
-        self.service._save_to_db('openmeteo', self.test_date, stale_data, lat=self.lat, lon=self.lon)
+        self.service._save_to_db('extended', self.test_date, stale_data, lat=self.lat, lon=self.lon)
 
         # Age the record beyond TTL
-        WeatherRecord.objects.filter(weather_type='openmeteo').update(
+        WeatherRecord.objects.filter(weather_type='extended').update(
             fetched_at=timezone.now() - timedelta(hours=10)
         )
 
         # Simulate rate limit hit
         mock_fetch.side_effect = RateLimitError("Rate limit threshold reached")
 
-        result = self.service._get_openmeteo_forecast(self.test_date)
+        result = self.service._get_extended_forecast(self.test_date)
 
         # Should fall back to stale data
         self.assertEqual(result.wind.speed, 15)
@@ -431,7 +431,7 @@ class WeatherRecordModelTests(TestCase):
 
     def test_create_with_coordinates(self):
         record = WeatherRecord.objects.create(
-            weather_type=WeatherRecord.WeatherType.OPENMETEO,
+            weather_type=WeatherRecord.WeatherType.EXTENDED,
             target_date=date.today(),
             latitude=Decimal('40.978100'),
             longitude=Decimal('-124.108600'),
@@ -739,10 +739,10 @@ class RateLimitDBCountTests(TestCase):
         result = self.service._check_rate_limit()
         self.assertTrue(result)
 
-    def test_check_rate_limit_counts_openmeteo_types(self):
-        """Should count openmeteo, hourly, and historical records."""
-        # Create records for Open-Meteo API types
-        for i, weather_type in enumerate(['openmeteo', 'hourly', 'historical']):
+    def test_check_rate_limit_counts_extended_types(self):
+        """Should count extended, hourly, and historical records."""
+        # Create records for Visual Crossing API types
+        for i, weather_type in enumerate(['extended', 'hourly', 'historical']):
             WeatherRecord.objects.create(
                 weather_type=weather_type,
                 target_date=date.today() + timedelta(days=i),  # Different dates to avoid unique constraint
@@ -756,9 +756,9 @@ class RateLimitDBCountTests(TestCase):
         result = self.service._check_rate_limit()
         self.assertTrue(result)
 
-    def test_check_rate_limit_ignores_non_openmeteo_types(self):
+    def test_check_rate_limit_ignores_non_extended_types(self):
         """Should not count METAR, TAF, or NWS records."""
-        # Create many non-Open-Meteo records
+        # Create many non-Visual Crossing records
         for i in range(100):
             WeatherRecord.objects.create(
                 weather_type='metar',

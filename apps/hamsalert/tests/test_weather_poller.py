@@ -60,8 +60,8 @@ class WeatherPollerTests(TestCase):
         self.assertEqual(mock_service._fetch_nws_forecast.call_count, 6)
         self.assertEqual(mock_service._save_to_db.call_count, 6)
 
-    def test_poll_openmeteo_saves_daily_and_hourly(self):
-        """OpenMeteo poll should use batch fetch for daily and hourly data."""
+    def test_poll_extended_saves_daily_and_hourly(self):
+        """Extended poll should use batch fetch for daily and hourly data."""
         poller = WeatherPoller()
         mock_service = MagicMock()
         mock_service.nws_location = (40.9781, -124.1086)
@@ -78,11 +78,11 @@ class WeatherPollerTests(TestCase):
         ]
         mock_service.fetch_visualcrossing_batch.return_value = mock_daily_results
         mock_service.fetch_visualcrossing_hourly_batch.return_value = mock_hourly_results
-        mock_service._serialize_openmeteo_data.return_value = {'test': 'data'}
+        mock_service._serialize_extended_data.return_value = {'test': 'data'}
         mock_service._serialize_hourly_data.return_value = {'test': 'hourly'}
         poller.service = mock_service
 
-        poller._poll_openmeteo(today)
+        poller._poll_extended(today)
 
         # Batch methods should be called once each (not 15 times)
         mock_service.fetch_visualcrossing_batch.assert_called_once_with(today)
@@ -128,5 +128,5 @@ class WeatherPollerTests(TestCase):
         # All sources should have been polled
         self.assertEqual(poller._poll_source.call_count, 5)
         # All last_poll times should be set
-        for source in ['metar', 'taf', 'nws', 'openmeteo', 'historical']:
+        for source in ['metar', 'taf', 'nws', 'extended', 'historical']:
             self.assertIsNotNone(poller.last_poll[source])

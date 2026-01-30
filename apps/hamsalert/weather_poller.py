@@ -31,7 +31,7 @@ _lock = threading.Lock()
 METAR_INTERVAL = 1800      # 30 min
 TAF_INTERVAL = 3600        # 1 hour
 NWS_INTERVAL = 7200        # 2 hours
-OPENMETEO_INTERVAL = 14400 # 4 hours
+EXTENDED_INTERVAL = 14400 # 4 hours
 HISTORICAL_INTERVAL = 86400  # 24 hours
 
 # Delay between API calls to avoid rate limiting (seconds)
@@ -54,7 +54,7 @@ class WeatherPoller:
             'metar': None,
             'taf': None,
             'nws': None,
-            'openmeteo': None,
+            'extended': None,
             'historical': None,
         }
         self._rate_limited_until = 0  # timestamp when rate limit expires
@@ -85,14 +85,14 @@ class WeatherPoller:
                 self._poll_if_due('metar', METAR_INTERVAL)
                 self._poll_if_due('taf', TAF_INTERVAL)
                 self._poll_if_due('nws', NWS_INTERVAL)
-                self._poll_if_due('openmeteo', OPENMETEO_INTERVAL)
+                self._poll_if_due('extended', EXTENDED_INTERVAL)
                 self._poll_if_due('historical', HISTORICAL_INTERVAL)
             time.sleep(60)  # Check every minute
 
     def _poll_all_sources(self):
         """Poll all sources immediately (used on startup), skipping if fresh data exists."""
         local_today = datetime.now(self.local_timezone).date()
-        for source in ['metar', 'taf', 'nws', 'openmeteo', 'historical']:
+        for source in ['metar', 'taf', 'nws', 'extended', 'historical']:
             if self._is_rate_limited():
                 logger.info("WeatherPoller: Rate limited, stopping initial poll")
                 break
@@ -133,7 +133,7 @@ class WeatherPoller:
             'metar': ('metar', METAR_INTERVAL),
             'taf': ('taf', TAF_INTERVAL),
             'nws': ('nws', NWS_INTERVAL),
-            'openmeteo': ('openmeteo', OPENMETEO_INTERVAL),
+            'extended': ('extended', EXTENDED_INTERVAL),
             'historical': ('historical', HISTORICAL_INTERVAL),
         }
         weather_type, ttl = ttl_map.get(source, (source, 3600))
@@ -141,10 +141,10 @@ class WeatherPoller:
         # Check if we have a record within the TTL
         cutoff = timezone.now() - timedelta(seconds=ttl)
 
-        # For openmeteo, check BOTH daily and hourly (need both to skip)
-        if source == 'openmeteo':
+        # For extended, check BOTH daily and hourly (need both to skip)
+        if source == 'extended':
             has_daily = WeatherRecord.objects.filter(
-                weather_type='openmeteo',
+                weather_type='extended',
                 target_date=local_today,
                 fetched_at__gte=cutoff,
             ).exists()
@@ -154,7 +154,7 @@ class WeatherPoller:
                 fetched_at__gte=cutoff,
             ).exists()
             if has_daily and has_hourly:
-                logger.info(f"WeatherPoller: Fresh openmeteo+hourly data exists, skipping poll")
+                logger.info(f"WeatherPoller: Fresh extended+hourly data exists, skipping poll")
                 return True
             return False
 
@@ -197,8 +197,8 @@ class WeatherPoller:
                 self._poll_taf(local_today)
             elif source == 'nws':
                 self._poll_nws(local_today)
-            elif source == 'openmeteo':
-                self._poll_openmeteo(local_today)
+            elif source == 'extended':
+                self._poll_extended(local_today)
             elif source == 'historical':
                 self._poll_historical(local_today)
         except Exception as e:
@@ -264,7 +264,7 @@ class WeatherPoller:
             time.sleep(API_CALL_DELAY)
         logger.info("WeatherPoller: NWS updated")
 
-    def _poll_openmeteo(self, local_today: date):
+    def _poll_extended(self, local_today: date):
         """Poll Visual Crossing for days 0-14, including hourly data (2 API calls total)."""
         logger.info("WeatherPoller: Polling Visual Crossing (batch)")
         lat, lon = self.service.nws_location
@@ -274,9 +274,9 @@ class WeatherPoller:
             results = self.service.fetch_visualcrossing_batch(local_today)
             for target_date, data in results:
                 self.service._save_to_db(
-                    'openmeteo',
+                    'extended',
                     target_date,
-                    self.service._serialize_openmeteo_data(data),
+                    self.service._serialize_extended_data(data),
                     lat=lat,
                     lon=lon,
                 )

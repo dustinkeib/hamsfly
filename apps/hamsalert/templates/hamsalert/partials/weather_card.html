@@ -39,7 +39,7 @@
                     <!-- Wind Arrow - always available -->
                     <div class="text-4xl font-bold" title="Wind direction">{{ weather.wind_arrow }}</div>
 
-                    <!-- Rain Chance - always available (NWS/OpenMeteo) -->
+                    <!-- Rain Chance - always available (NWS/Extended) -->
                     <div>
                         {% if weather.precipitation_probability is not None %}
                         <div class="font-medium">{{ weather.precipitation_probability }}%</div>
@@ -49,7 +49,7 @@
                         <div class="text-xs text-base-content/60">Rain</div>
                     </div>
 
-                    <!-- Temperature - always High/Low (NWS/OpenMeteo) -->
+                    <!-- Temperature - always High/Low (NWS/Extended) -->
                     <div>
                         {% if weather.temperature_high_f is not None %}
                         <div class="font-medium whitespace-nowrap">
@@ -120,7 +120,7 @@
                     {% if weather.nws %}
                     <span class="badge badge-accent badge-xs badge-outline">NWS</span>
                     {% endif %}
-                    {% if weather.openmeteo %}
+                    {% if weather.extended %}
                     <span class="badge badge-info badge-xs badge-outline">Extended</span>
                     {% endif %}
                     {% if weather.historical %}
