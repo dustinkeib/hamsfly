@@ -4,7 +4,7 @@ Management command to manually poll weather sources.
 Usage:
     python manage.py poll_weather                    # Poll all sources
     python manage.py poll_weather --source metar    # Poll specific source
-    python manage.py poll_weather --source openmeteo --source hourly  # Multiple sources
+    python manage.py poll_weather --source daily --source hourly  # Multiple sources
 """
 
 import time
@@ -14,7 +14,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 from zoneinfo import ZoneInfo
 
-VALID_SOURCES = ['all', 'metar', 'taf', 'nws', 'openmeteo', 'hourly', 'historical']
+VALID_SOURCES = ['all', 'metar', 'taf', 'nws', 'daily', 'hourly', 'historical']
 
 
 class Command(BaseCommand):
@@ -41,7 +41,7 @@ class Command(BaseCommand):
         historical_days = options['historical_days']
 
         if 'all' in sources:
-            sources = ['metar', 'taf', 'nws', 'openmeteo', 'hourly']
+            sources = ['metar', 'taf', 'nws', 'daily', 'hourly']
 
         service = WeatherService()
         local_tz = ZoneInfo(getattr(settings, 'WEATHER_LOCAL_TIMEZONE', 'America/Los_Angeles'))
@@ -57,8 +57,8 @@ class Command(BaseCommand):
                     self._poll_taf(service, local_today)
                 elif source == 'nws':
                     self._poll_nws(service, local_today, lat, lon)
-                elif source == 'openmeteo':
-                    self._poll_openmeteo(service, local_today, lat, lon)
+                elif source == 'daily':
+                    self._poll_daily(service, local_today, lat, lon)
                 elif source == 'hourly':
                     self._poll_hourly(service, local_today, lat, lon)
                 elif source == 'historical':
@@ -112,9 +112,9 @@ class Command(BaseCommand):
                 self.stdout.write(f'    NWS saved for {target_date}')
             time.sleep(1)
 
-    def _poll_openmeteo(self, service, local_today, lat, lon):
-        """Poll OpenMeteo daily for days 0-15 (batch)."""
-        results = service.fetch_openmeteo_batch(local_today)
+    def _poll_daily(self, service, local_today, lat, lon):
+        """Poll Visual Crossing daily for days 0-14 (batch)."""
+        results = service.fetch_visualcrossing_batch(local_today)
         for target_date, data in results:
             service._save_to_db(
                 'openmeteo',
@@ -123,11 +123,11 @@ class Command(BaseCommand):
                 lat=lat,
                 lon=lon,
             )
-        self.stdout.write(f'    OpenMeteo daily saved ({len(results)} days)')
+        self.stdout.write(f'    Daily saved ({len(results)} days)')
 
     def _poll_hourly(self, service, local_today, lat, lon):
-        """Poll OpenMeteo hourly for days 0-15 (batch)."""
-        results = service.fetch_hourly_batch(local_today, days=16)
+        """Poll Visual Crossing hourly for days 0-14 (batch)."""
+        results = service.fetch_visualcrossing_hourly_batch(local_today, days=15)
         for target_date, data in results:
             service._save_to_db(
                 'hourly',
@@ -143,7 +143,7 @@ class Command(BaseCommand):
         for days_ago in range(1, days + 1):
             target_date = local_today - timedelta(days=days_ago)
             try:
-                data = service._fetch_historical_weather(target_date)
+                data = service.fetch_visualcrossing_historical(target_date)
                 if data:
                     service._save_to_db(
                         'historical',

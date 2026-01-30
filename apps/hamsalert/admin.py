@@ -59,16 +59,16 @@ def _poll_all(request):
             time.sleep(1)
         results.append('NWS')
 
-        # OpenMeteo daily
-        daily_results = service.fetch_openmeteo_batch(local_today)
+        # Visual Crossing daily
+        daily_results = service.fetch_visualcrossing_batch(local_today)
         for target, data in daily_results:
             service._save_to_db('openmeteo', target, service._serialize_openmeteo_data(data), lat=lat, lon=lon)
-        results.append(f'OpenMeteo ({len(daily_results)} days)')
+        results.append(f'Daily ({len(daily_results)} days)')
 
         time.sleep(2)
 
-        # OpenMeteo hourly
-        hourly_results = service.fetch_hourly_batch(local_today, days=16)
+        # Visual Crossing hourly
+        hourly_results = service.fetch_visualcrossing_hourly_batch(local_today, days=15)
         for target, data in hourly_results:
             service._save_to_db('hourly', target, service._serialize_hourly_data(data), lat=lat, lon=lon)
         results.append(f'Hourly ({len(hourly_results)} days)')
@@ -125,23 +125,23 @@ def _poll_nws(request):
         return False, f"NWS poll failed: {e}"
 
 
-def _poll_openmeteo(request):
-    """Poll OpenMeteo daily forecast for days 0-15."""
+def _poll_daily(request):
+    """Poll Visual Crossing daily forecast for days 0-14."""
     service, local_today, lat, lon = _get_weather_context()
     try:
-        results = service.fetch_openmeteo_batch(local_today)
+        results = service.fetch_visualcrossing_batch(local_today)
         for target, data in results:
             service._save_to_db('openmeteo', target, service._serialize_openmeteo_data(data), lat=lat, lon=lon)
-        return True, f"OpenMeteo daily updated ({len(results)} days)"
+        return True, f"Daily forecast updated ({len(results)} days)"
     except Exception as e:
-        return False, f"OpenMeteo poll failed: {e}"
+        return False, f"Daily poll failed: {e}"
 
 
 def _poll_hourly(request):
-    """Poll OpenMeteo hourly forecast for days 0-15."""
+    """Poll Visual Crossing hourly forecast for days 0-14."""
     service, local_today, lat, lon = _get_weather_context()
     try:
-        results = service.fetch_hourly_batch(local_today, days=16)
+        results = service.fetch_visualcrossing_hourly_batch(local_today, days=15)
         for target, data in results:
             service._save_to_db('hourly', target, service._serialize_hourly_data(data), lat=lat, lon=lon)
         return True, f"Hourly updated ({len(results)} days)"
@@ -174,7 +174,7 @@ POLL_ACTIONS = {
     'metar': ('METAR', _poll_metar),
     'taf': ('TAF', _poll_taf),
     'nws': ('NWS', _poll_nws),
-    'openmeteo': ('OpenMeteo', _poll_openmeteo),
+    'openmeteo': ('Daily', _poll_daily),
     'hourly': ('Hourly', _poll_hourly),
     'historical': ('Historical', _poll_historical),
 }
