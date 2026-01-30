@@ -452,7 +452,7 @@ class RateLimitRequestIntegrationTests(TestCase):
 
         # Make request (rate limit should allow)
         response = self.service._make_request_with_retry(
-            'https://api.open-meteo.com/v1/forecast',
+            'https://weather.visualcrossing.com/test',
             params={'latitude': 40.0, 'longitude': -124.0},
         )
         self.assertEqual(response.status_code, 200)

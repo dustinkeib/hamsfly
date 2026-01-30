@@ -2342,8 +2342,8 @@ class WeatherService:
             raise WeatherServiceError(f"Failed to parse NWS data: {e}")
 
     def _get_openmeteo_forecast(self, target_date: date) -> Optional[OpenMeteoForecastData]:
-        """Get Open-Meteo extended forecast for a target date with DB cache."""
-        lat, lon = self.nws_location  # Reuse same location
+        """Get extended forecast for a target date with DB cache (uses Visual Crossing)."""
+        lat, lon = self.nws_location
         ttl = self.openmeteo_cache_ttl
 
         # 1. Check DB cache
@@ -2352,11 +2352,11 @@ class WeatherService:
             data = self._deserialize_openmeteo_data(db_data)
             return data
 
-        # 2. Fetch from API
-        logger.info(f"API fetch: OpenMeteo {lat},{lon}")
+        # 2. Fetch from Visual Crossing API
+        logger.info(f"API fetch: Visual Crossing daily {lat},{lon}")
         try:
             start_time = time.time()
-            data = self._fetch_openmeteo_forecast(target_date)
+            data = self._fetch_visualcrossing_daily(target_date)
             response_time_ms = int((time.time() - start_time) * 1000)
 
             if data:
@@ -2370,39 +2370,79 @@ class WeatherService:
             # 3. Fallback to stale DB data
             stale_data = self._get_from_db('openmeteo', target_date, lat=lat, lon=lon, max_age_seconds=None)
             if stale_data:
-                logger.warning(f"Using stale DB data for Open-Meteo {lat},{lon} on {target_date}")
+                logger.warning(f"Using stale DB data for daily {lat},{lon} on {target_date}")
                 return self._deserialize_openmeteo_data(stale_data)
             raise
 
-    def _fetch_openmeteo_forecast(self, target_date: date) -> Optional[OpenMeteoForecastData]:
-        """Fetch forecast from Open-Meteo API with retry on rate limit."""
+    def _fetch_visualcrossing_daily(self, target_date: date) -> Optional[OpenMeteoForecastData]:
+        """Fetch daily forecast from Visual Crossing API for a single date."""
+        if not self.visualcrossing_api_key:
+            raise WeatherServiceError("Visual Crossing API key not configured")
+
         lat, lon = self.nws_location
+        location = f"{lat},{lon}"
+        date_str = target_date.isoformat()
+
+        url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{location}/{date_str}/{date_str}"
 
         params = {
-            'latitude': lat,
-            'longitude': lon,
-            'daily': ','.join([
-                'temperature_2m_max',
-                'temperature_2m_min',
-                'precipitation_probability_max',
-                'wind_speed_10m_max',
-                'wind_gusts_10m_max',
-                'wind_direction_10m_dominant',
-            ]),
-            'timezone': 'auto',
-            'forecast_days': 16,
+            'key': self.visualcrossing_api_key,
+            'unitGroup': 'metric',
+            'include': 'days',
+            'contentType': 'json',
         }
 
-        response = self._make_request_with_retry(
-            'https://api.open-meteo.com/v1/forecast',
-            params=params,
-        )
+        response = self._make_request_with_retry(url, params=params)
 
-        if response.status_code != 200:
-            logger.warning(f"Open-Meteo API error: {response.status_code}")
-            raise WeatherServiceError(f"Open-Meteo API error: {response.status_code}")
+        if response.status_code == 401:
+            raise WeatherServiceError("Invalid Visual Crossing API key")
+        elif response.status_code != 200:
+            logger.warning(f"Visual Crossing API error: {response.status_code}")
+            raise WeatherServiceError(f"Visual Crossing API error: {response.status_code}")
 
-        return self._parse_openmeteo_response(response.json(), target_date)
+        return self._parse_visualcrossing_daily_response(response.json(), target_date)
+
+    def _parse_visualcrossing_daily_response(self, data: dict, target_date: date) -> Optional[OpenMeteoForecastData]:
+        """Parse Visual Crossing daily API response for a single date."""
+        try:
+            days = data.get('days', [])
+            if not days:
+                return None
+
+            day_data = days[0]
+
+            temp_max = day_data.get('tempmax')
+            temp_min = day_data.get('tempmin')
+            precip_prob = day_data.get('precipprob')
+            wind_speed_kmh = day_data.get('windspeed') or 0
+            wind_gust_kmh = day_data.get('windgust')
+            wind_dir = day_data.get('winddir')
+
+            # Convert km/h to knots
+            wind_speed_kt = round(wind_speed_kmh * 0.54)
+            wind_gust_kt = round(wind_gust_kmh * 0.54) if wind_gust_kmh else None
+
+            wind = WindData(
+                direction=round(wind_dir) if wind_dir is not None else None,
+                speed=wind_speed_kt,
+                gust=wind_gust_kt,
+                direction_repr=str(round(wind_dir)) if wind_dir is not None else 'VRB',
+            )
+
+            return OpenMeteoForecastData(
+                location=self.nws_location,
+                target_date=target_date,
+                wind=wind,
+                temperature_high=round(temp_max) if temp_max is not None else None,
+                temperature_low=round(temp_min) if temp_min is not None else None,
+                precipitation_probability=round(precip_prob) if precip_prob is not None else None,
+                cached_at=timezone.now(),
+                source=WeatherSource.OPENMETEO,
+            )
+
+        except (KeyError, TypeError, IndexError) as e:
+            logger.error(f"Failed to parse Visual Crossing response: {e}")
+            raise WeatherServiceError(f"Failed to parse Visual Crossing data: {e}")
 
     def _parse_openmeteo_response(self, data: dict, target_date: date) -> Optional[OpenMeteoForecastData]:
         """Parse Open-Meteo API response."""
@@ -2452,7 +2492,7 @@ class WeatherService:
             raise WeatherServiceError(f"Failed to parse Open-Meteo data: {e}")
 
     def get_hourly_forecast(self, target_date: date) -> Optional['HourlyForecastData']:
-        """Get hourly forecast data for a target date (0-15 days out) with DB cache."""
+        """Get hourly forecast data for a target date (0-14 days out) with DB cache."""
         lat, lon = self.nws_location
         ttl = self.openmeteo_cache_ttl
 
@@ -2462,11 +2502,11 @@ class WeatherService:
             data = self._deserialize_hourly_data(db_data)
             return data
 
-        # 2. Fetch from API
-        logger.info(f"API fetch: Hourly {lat},{lon}")
+        # 2. Fetch from Visual Crossing API
+        logger.info(f"API fetch: Visual Crossing hourly {lat},{lon}")
         try:
             start_time = time.time()
-            data = self._fetch_hourly_forecast(target_date)
+            data = self._fetch_visualcrossing_hourly(target_date)
             response_time_ms = int((time.time() - start_time) * 1000)
 
             if data:
@@ -2484,69 +2524,68 @@ class WeatherService:
                 return self._deserialize_hourly_data(stale_data)
             raise
 
-    def _fetch_hourly_forecast(self, target_date: date) -> Optional['HourlyForecastData']:
-        """Fetch hourly forecast from Open-Meteo API with retry on rate limit."""
+    def _fetch_visualcrossing_hourly(self, target_date: date) -> Optional['HourlyForecastData']:
+        """Fetch hourly forecast from Visual Crossing API for a single date."""
+        if not self.visualcrossing_api_key:
+            raise WeatherServiceError("Visual Crossing API key not configured")
+
         lat, lon = self.nws_location
+        location = f"{lat},{lon}"
         date_str = target_date.isoformat()
 
+        url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{location}/{date_str}/{date_str}"
+
         params = {
-            'latitude': lat,
-            'longitude': lon,
-            'hourly': ','.join([
-                'temperature_2m',
-                'wind_speed_10m',
-                'wind_direction_10m',
-                'wind_gusts_10m',
-                'precipitation_probability',
-                'weather_code',
-            ]),
-            'timezone': 'auto',
-            'start_date': date_str,
-            'end_date': date_str,
+            'key': self.visualcrossing_api_key,
+            'unitGroup': 'metric',
+            'include': 'hours',
+            'contentType': 'json',
         }
 
-        response = self._make_request_with_retry(
-            'https://api.open-meteo.com/v1/forecast',
-            params=params,
-        )
+        response = self._make_request_with_retry(url, params=params)
 
-        if response.status_code != 200:
-            logger.warning(f"Open-Meteo hourly API error: {response.status_code}")
-            raise WeatherServiceError(f"Open-Meteo API error: {response.status_code}")
+        if response.status_code == 401:
+            raise WeatherServiceError("Invalid Visual Crossing API key")
+        elif response.status_code != 200:
+            logger.warning(f"Visual Crossing hourly API error: {response.status_code}")
+            raise WeatherServiceError(f"Visual Crossing API error: {response.status_code}")
 
-        return self._parse_hourly_response(response.json(), target_date)
+        return self._parse_visualcrossing_hourly_response(response.json(), target_date)
 
-    def _parse_hourly_response(self, data: dict, target_date: date) -> Optional['HourlyForecastData']:
-        """Parse Open-Meteo hourly API response."""
+    def _parse_visualcrossing_hourly_response(self, data: dict, target_date: date) -> Optional['HourlyForecastData']:
+        """Parse Visual Crossing hourly API response for a single date."""
         try:
-            hourly = data.get('hourly', {})
-            times = hourly.get('time', [])
-
-            if not times:
+            days = data.get('days', [])
+            if not days:
                 return None
 
-            temps = hourly.get('temperature_2m', [])
-            wind_speeds = hourly.get('wind_speed_10m', [])
-            wind_dirs = hourly.get('wind_direction_10m', [])
-            wind_gusts = hourly.get('wind_gusts_10m', [])
-            precip_probs = hourly.get('precipitation_probability', [])
-            weather_codes = hourly.get('weather_code', [])
-
+            day_data = days[0]
+            hours_data = day_data.get('hours', [])
             hours = []
-            for i, time_str in enumerate(times):
+
+            for hour_data in hours_data:
+                time_str = hour_data.get('datetime', '')  # Format: "HH:MM:SS"
                 try:
-                    hour_time = datetime.fromisoformat(time_str)
-                except (ValueError, AttributeError):
+                    hour_time = datetime.combine(
+                        target_date,
+                        datetime.strptime(time_str, "%H:%M:%S").time(),
+                        tzinfo=self.local_timezone,
+                    )
+                except ValueError:
                     continue
+
+                # Map Visual Crossing conditions to WMO weather codes
+                conditions = hour_data.get('conditions', '')
+                weather_code = self._conditions_to_wmo_code(conditions)
 
                 hours.append(HourlyForecastEntry(
                     time=hour_time,
-                    temperature_c=temps[i] if i < len(temps) else None,
-                    wind_speed_kmh=wind_speeds[i] if i < len(wind_speeds) else None,
-                    wind_direction=wind_dirs[i] if i < len(wind_dirs) else None,
-                    wind_gusts_kmh=wind_gusts[i] if i < len(wind_gusts) else None,
-                    precipitation_probability=precip_probs[i] if i < len(precip_probs) else None,
-                    weather_code=weather_codes[i] if i < len(weather_codes) else None,
+                    temperature_c=hour_data.get('temp'),
+                    wind_speed_kmh=hour_data.get('windspeed'),
+                    wind_direction=round(hour_data.get('winddir')) if hour_data.get('winddir') is not None else None,
+                    wind_gusts_kmh=hour_data.get('windgust'),
+                    precipitation_probability=round(hour_data.get('precipprob')) if hour_data.get('precipprob') is not None else None,
+                    weather_code=weather_code,
                 ))
 
             return HourlyForecastData(
@@ -2557,11 +2596,11 @@ class WeatherService:
             )
 
         except (KeyError, TypeError, IndexError) as e:
-            logger.error(f"Failed to parse hourly response: {e}")
+            logger.error(f"Failed to parse Visual Crossing hourly response: {e}")
             raise WeatherServiceError(f"Failed to parse hourly data: {e}")
 
     def _get_historical_weather(self, target_date: date) -> Optional[HistoricalWeatherData]:
-        """Get historical weather data for a past date with DB cache."""
+        """Get historical weather data for a past date with DB cache (uses Visual Crossing)."""
         lat, lon = self.nws_location
         ttl = self.historical_cache_ttl
 
@@ -2571,11 +2610,11 @@ class WeatherService:
             data = self._deserialize_historical_data(db_data)
             return data
 
-        # 2. Fetch from API
-        logger.info(f"API fetch: Historical {lat},{lon}")
+        # 2. Fetch from Visual Crossing API
+        logger.info(f"API fetch: Visual Crossing historical {lat},{lon}")
         try:
             start_time = time.time()
-            data = self._fetch_historical_weather(target_date)
+            data = self.fetch_visualcrossing_historical(target_date)
             response_time_ms = int((time.time() - start_time) * 1000)
 
             if data:
@@ -2592,84 +2631,6 @@ class WeatherService:
                 logger.warning(f"Using stale DB data for historical {lat},{lon} on {target_date}")
                 return self._deserialize_historical_data(stale_data)
             raise
-
-    def _fetch_historical_weather(self, target_date: date) -> Optional[HistoricalWeatherData]:
-        """Fetch historical weather from Open-Meteo Archive API with retry on rate limit."""
-        lat, lon = self.nws_location
-
-        params = {
-            'latitude': lat,
-            'longitude': lon,
-            'start_date': target_date.isoformat(),
-            'end_date': target_date.isoformat(),
-            'daily': ','.join([
-                'temperature_2m_max',
-                'temperature_2m_min',
-                'precipitation_sum',
-                'wind_speed_10m_max',
-                'wind_gusts_10m_max',
-                'wind_direction_10m_dominant',
-            ]),
-            'timezone': 'auto',
-        }
-
-        response = self._make_request_with_retry(
-            'https://archive-api.open-meteo.com/v1/archive',
-            params=params,
-        )
-
-        if response.status_code != 200:
-            logger.warning(f"Open-Meteo Archive API error: {response.status_code}")
-            raise WeatherServiceError(f"Open-Meteo Archive API error: {response.status_code}")
-
-        return self._parse_historical_response(response.json(), target_date)
-
-    def _parse_historical_response(self, data: dict, target_date: date) -> Optional[HistoricalWeatherData]:
-        """Parse Open-Meteo Archive API response."""
-        try:
-            daily = data.get('daily', {})
-            dates = daily.get('time', [])
-
-            # Find index for target date
-            target_str = target_date.isoformat()
-            if target_str not in dates:
-                return None
-
-            idx = dates.index(target_str)
-
-            # Get values for target date
-            temp_max = daily.get('temperature_2m_max', [])[idx]
-            temp_min = daily.get('temperature_2m_min', [])[idx]
-            precip_sum = daily.get('precipitation_sum', [])[idx]
-            wind_speed_kmh = daily.get('wind_speed_10m_max', [])[idx] or 0
-            wind_gust_kmh = daily.get('wind_gusts_10m_max', [])[idx]
-            wind_dir = daily.get('wind_direction_10m_dominant', [])[idx]
-
-            # Convert km/h to knots (1 km/h = 0.54 knots)
-            wind_speed_kt = round(wind_speed_kmh * 0.54)
-            wind_gust_kt = round(wind_gust_kmh * 0.54) if wind_gust_kmh else None
-
-            wind = WindData(
-                direction=wind_dir,
-                speed=wind_speed_kt,
-                gust=wind_gust_kt,
-                direction_repr=str(wind_dir) if wind_dir else 'VRB',
-            )
-
-            return HistoricalWeatherData(
-                location=self.nws_location,
-                target_date=target_date,
-                wind=wind,
-                temperature_high=round(temp_max) if temp_max is not None else None,
-                temperature_low=round(temp_min) if temp_min is not None else None,
-                precipitation_sum=precip_sum,
-                cached_at=timezone.now(),
-                source=WeatherSource.HISTORICAL,
-            )
-
-        except (KeyError, TypeError, IndexError) as e:
-            logger.error(f"Failed to parse historical response: {e}")
-            raise WeatherServiceError(f"Failed to parse historical data: {e}")
 
     def clear_cache(self, station: Optional[str] = None, target_date: Optional[date] = None) -> None:
         """Clear cached weather data (DB records only)."""
@@ -2709,184 +2670,7 @@ class WeatherService:
         return bool(self.api_token)
 
     # -------------------------------------------------------------------------
-    # Batch fetch methods for background poller (single API call for all days)
-    # -------------------------------------------------------------------------
-
-    def fetch_openmeteo_batch(self, local_today: date) -> list[tuple[date, OpenMeteoForecastData]]:
-        """
-        Fetch daily forecast from Open-Meteo for 16 days in ONE API call.
-        Returns list of (target_date, data) tuples for each day.
-        """
-        lat, lon = self.nws_location
-
-        params = {
-            'latitude': lat,
-            'longitude': lon,
-            'daily': ','.join([
-                'temperature_2m_max',
-                'temperature_2m_min',
-                'precipitation_probability_max',
-                'wind_speed_10m_max',
-                'wind_gusts_10m_max',
-                'wind_direction_10m_dominant',
-            ]),
-            'timezone': 'auto',
-            'forecast_days': 16,
-        }
-
-        response = self._make_request_with_retry(
-            'https://api.open-meteo.com/v1/forecast',
-            params=params,
-        )
-
-        if response.status_code != 200:
-            logger.warning(f"Open-Meteo API error: {response.status_code}")
-            raise WeatherServiceError(f"Open-Meteo API error: {response.status_code}")
-
-        return self._parse_openmeteo_batch_response(response.json())
-
-    def _parse_openmeteo_batch_response(self, data: dict) -> list[tuple[date, OpenMeteoForecastData]]:
-        """Parse Open-Meteo API response and return all 16 days."""
-        results = []
-        try:
-            daily = data.get('daily', {})
-            dates = daily.get('time', [])
-
-            for idx, date_str in enumerate(dates):
-                try:
-                    target_date = date.fromisoformat(date_str)
-                except ValueError:
-                    continue
-
-                temp_max = daily.get('temperature_2m_max', [])[idx]
-                temp_min = daily.get('temperature_2m_min', [])[idx]
-                precip_prob = daily.get('precipitation_probability_max', [])[idx]
-                wind_speed_kmh = daily.get('wind_speed_10m_max', [])[idx] or 0
-                wind_gust_kmh = daily.get('wind_gusts_10m_max', [])[idx]
-                wind_dir = daily.get('wind_direction_10m_dominant', [])[idx]
-
-                # Convert km/h to knots (1 km/h = 0.54 knots)
-                wind_speed_kt = round(wind_speed_kmh * 0.54)
-                wind_gust_kt = round(wind_gust_kmh * 0.54) if wind_gust_kmh else None
-
-                wind = WindData(
-                    direction=wind_dir,
-                    speed=wind_speed_kt,
-                    gust=wind_gust_kt,
-                    direction_repr=str(wind_dir) if wind_dir else 'VRB',
-                )
-
-                forecast = OpenMeteoForecastData(
-                    location=self.nws_location,
-                    target_date=target_date,
-                    wind=wind,
-                    temperature_high=round(temp_max) if temp_max is not None else None,
-                    temperature_low=round(temp_min) if temp_min is not None else None,
-                    precipitation_probability=precip_prob,
-                    cached_at=timezone.now(),
-                    source=WeatherSource.OPENMETEO,
-                )
-                results.append((target_date, forecast))
-
-        except (KeyError, TypeError, IndexError) as e:
-            logger.error(f"Failed to parse Open-Meteo batch response: {e}")
-            raise WeatherServiceError(f"Failed to parse Open-Meteo data: {e}")
-
-        return results
-
-    def fetch_hourly_batch(self, local_today: date, days: int = 16) -> list[tuple[date, 'HourlyForecastData']]:
-        """
-        Fetch hourly forecast from Open-Meteo for multiple days in ONE API call.
-        Returns list of (target_date, data) tuples for each day.
-        """
-        lat, lon = self.nws_location
-        start_date = local_today
-        end_date = local_today + timedelta(days=days - 1)
-
-        params = {
-            'latitude': lat,
-            'longitude': lon,
-            'hourly': ','.join([
-                'temperature_2m',
-                'wind_speed_10m',
-                'wind_direction_10m',
-                'wind_gusts_10m',
-                'precipitation_probability',
-                'weather_code',
-            ]),
-            'timezone': 'auto',
-            'start_date': start_date.isoformat(),
-            'end_date': end_date.isoformat(),
-        }
-
-        response = self._make_request_with_retry(
-            'https://api.open-meteo.com/v1/forecast',
-            params=params,
-        )
-
-        if response.status_code != 200:
-            logger.warning(f"Open-Meteo hourly API error: {response.status_code}")
-            raise WeatherServiceError(f"Open-Meteo API error: {response.status_code}")
-
-        return self._parse_hourly_batch_response(response.json())
-
-    def _parse_hourly_batch_response(self, data: dict) -> list[tuple[date, 'HourlyForecastData']]:
-        """Parse Open-Meteo hourly API response and return all days."""
-        try:
-            hourly = data.get('hourly', {})
-            times = hourly.get('time', [])
-
-            if not times:
-                return []
-
-            temps = hourly.get('temperature_2m', [])
-            wind_speeds = hourly.get('wind_speed_10m', [])
-            wind_dirs = hourly.get('wind_direction_10m', [])
-            wind_gusts = hourly.get('wind_gusts_10m', [])
-            precip_probs = hourly.get('precipitation_probability', [])
-            weather_codes = hourly.get('weather_code', [])
-
-            # Group hours by date
-            hours_by_date: dict[date, list[HourlyForecastEntry]] = {}
-            for i, time_str in enumerate(times):
-                try:
-                    hour_time = datetime.fromisoformat(time_str)
-                    target_date = hour_time.date()
-                except (ValueError, AttributeError):
-                    continue
-
-                if target_date not in hours_by_date:
-                    hours_by_date[target_date] = []
-
-                hours_by_date[target_date].append(HourlyForecastEntry(
-                    time=hour_time,
-                    temperature_c=temps[i] if i < len(temps) else None,
-                    wind_speed_kmh=wind_speeds[i] if i < len(wind_speeds) else None,
-                    wind_direction=wind_dirs[i] if i < len(wind_dirs) else None,
-                    wind_gusts_kmh=wind_gusts[i] if i < len(wind_gusts) else None,
-                    precipitation_probability=precip_probs[i] if i < len(precip_probs) else None,
-                    weather_code=weather_codes[i] if i < len(weather_codes) else None,
-                ))
-
-            # Build results
-            results = []
-            for target_date, hours in sorted(hours_by_date.items()):
-                forecast = HourlyForecastData(
-                    location=self.nws_location,
-                    target_date=target_date,
-                    hours=hours,
-                    cached_at=timezone.now(),
-                )
-                results.append((target_date, forecast))
-
-            return results
-
-        except (KeyError, TypeError, IndexError) as e:
-            logger.error(f"Failed to parse hourly batch response: {e}")
-            raise WeatherServiceError(f"Failed to parse hourly data: {e}")
-
-    # -------------------------------------------------------------------------
-    # Visual Crossing batch fetch methods (replacement for Open-Meteo)
+    # Visual Crossing batch fetch methods for background poller
     # -------------------------------------------------------------------------
 
     def fetch_visualcrossing_batch(self, local_today: date) -> list[tuple[date, OpenMeteoForecastData]]:

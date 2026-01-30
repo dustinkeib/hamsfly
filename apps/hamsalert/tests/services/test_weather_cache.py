@@ -306,7 +306,7 @@ class DBCacheIntegrationTests(TestCase):
         self.test_date = date.today() + timedelta(days=10)
         self.lat, self.lon = self.service.nws_location
 
-    @patch.object(WeatherService, '_fetch_openmeteo_forecast')
+    @patch.object(WeatherService, '_fetch_visualcrossing_daily')
     def test_cache_miss_fetches_from_api_and_stores(self, mock_fetch):
         """On cache miss, should fetch from API and store in DB."""
         mock_data = OpenMeteoForecastData(
@@ -327,7 +327,7 @@ class DBCacheIntegrationTests(TestCase):
         # Verify stored in DB
         self.assertEqual(WeatherRecord.objects.filter(weather_type='openmeteo').count(), 1)
 
-    @patch.object(WeatherService, '_fetch_openmeteo_forecast')
+    @patch.object(WeatherService, '_fetch_visualcrossing_daily')
     def test_db_cache_hit_skips_api(self, mock_fetch):
         """On DB cache hit, should not call API."""
         # Store in DB
@@ -347,7 +347,7 @@ class DBCacheIntegrationTests(TestCase):
         self.assertEqual(result.wind.speed, 8)
         self.assertTrue(result.from_cache)
 
-    @patch.object(WeatherService, '_fetch_openmeteo_forecast')
+    @patch.object(WeatherService, '_fetch_visualcrossing_daily')
     def test_stale_db_fallback_on_api_error(self, mock_fetch):
         """On API error, should fall back to stale DB data."""
         # Store stale data in DB
@@ -374,7 +374,7 @@ class DBCacheIntegrationTests(TestCase):
         self.assertEqual(result.wind.speed, 12)
         self.assertTrue(result.from_cache)
 
-    @patch.object(WeatherService, '_fetch_openmeteo_forecast')
+    @patch.object(WeatherService, '_fetch_visualcrossing_daily')
     def test_api_error_with_no_stale_data_raises(self, mock_fetch):
         """On API error with no stale data, should raise exception."""
         mock_fetch.side_effect = WeatherServiceError("API unavailable")
@@ -382,7 +382,7 @@ class DBCacheIntegrationTests(TestCase):
         with self.assertRaises(WeatherServiceError):
             self.service._get_openmeteo_forecast(self.test_date)
 
-    @patch.object(WeatherService, '_fetch_openmeteo_forecast')
+    @patch.object(WeatherService, '_fetch_visualcrossing_daily')
     def test_rate_limit_error_triggers_stale_fallback(self, mock_fetch):
         """RateLimitError causes _get_openmeteo_forecast to return stale DB data."""
         # Store stale data in DB
@@ -402,7 +402,7 @@ class DBCacheIntegrationTests(TestCase):
         )
 
         # Simulate rate limit hit
-        mock_fetch.side_effect = RateLimitError("Open-Meteo rate limit threshold reached")
+        mock_fetch.side_effect = RateLimitError("Rate limit threshold reached")
 
         result = self.service._get_openmeteo_forecast(self.test_date)
 
