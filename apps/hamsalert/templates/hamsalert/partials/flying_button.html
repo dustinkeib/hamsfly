@@ -1,5 +1,5 @@
 <button
-    class="btn btn-sm {% if is_flying %}btn-success{% else %}btn-outline btn-primary{% endif %} gap-1"
+    class="btn btn-sm {% if is_flying %}btn-success{% else %}btn-outline btn-success{% endif %} gap-1"
     hx-post="{% url 'toggle_flying_intent' %}"
     hx-vals='{"year": "{{ date.year }}", "month": "{{ date.month }}", "day": "{{ date.day }}"}'
     hx-target="#flying-button-container"
