@@ -13,14 +13,7 @@
                 <a href="{% url 'calendar_day' prev_year prev_month prev_day %}"
                    class="btn btn-ghost btn-sm"
                    title="Previous month">
-                    &lt;&lt; Month
-                </a>
-
-                <!-- Previous Day Button -->
-                <a href="{% url 'calendar_day' prev_day_same_month_year prev_day_same_month_month prev_day_same_month %}"
-                   class="btn btn-ghost btn-sm"
-                   title="Previous day">
-                    &lt; Day
+                    &lt; Prev
                 </a>
 
                 <!-- Current Month Display with Today Button -->
@@ -35,18 +28,11 @@
                     </a>
                 </div>
 
-                <!-- Next Day Button -->
-                <a href="{% url 'calendar_day' next_day_same_month_year next_day_same_month_month next_day_same_month %}"
-                   class="btn btn-ghost btn-sm"
-                   title="Next day">
-                    Day &gt;
-                </a>
-
                 <!-- Next Month Button -->
                 <a href="{% url 'calendar_day' next_year next_month next_day %}"
                    class="btn btn-ghost btn-sm"
                    title="Next month">
-                    Month &gt;&gt;
+                    Next &gt;
                 </a>
             </div>
 
