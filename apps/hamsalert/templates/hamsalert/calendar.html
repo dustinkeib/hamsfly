@@ -9,12 +9,45 @@
         <div class="card-body py-3">
             <!-- Month Navigation -->
             <div class="flex items-center justify-center gap-2 mb-2">
-                <a href="{% url 'calendar_day' prev_year prev_month prev_day %}" class="btn btn-ghost btn-sm">&lt; Prev</a>
+                <!-- Previous Month Button -->
+                <a href="{% url 'calendar_day' prev_year prev_month prev_day %}"
+                   class="btn btn-ghost btn-sm"
+                   title="Previous month">
+                    &lt;&lt; Month
+                </a>
+
+                <!-- Previous Day Button -->
+                <a href="{% url 'calendar_day' prev_day_same_month_year prev_day_same_month_month prev_day_same_month %}"
+                   class="btn btn-ghost btn-sm"
+                   title="Previous day">
+                    &lt; Day
+                </a>
+
+                <!-- Current Month Display with Today Button -->
                 <div class="flex items-center gap-2">
-                    <h2 class="card-title text-2xl"><span class="sm:hidden">{{ month_name|slice:":3" }}</span><span class="hidden sm:inline">{{ month_name }}</span> {{ year }}</h2>
-                    <a href="{% url 'calendar' %}" class="btn btn-success btn-xs"><span class="sm:hidden">Today &gt;</span><span class="hidden sm:inline">Go to Today</span></a>
+                    <h2 class="card-title text-2xl">
+                        <span class="sm:hidden">{{ month_name|slice:":3" }}</span>
+                        <span class="hidden sm:inline">{{ month_name }}</span> {{ year }}
+                    </h2>
+                    <a href="{% url 'calendar' %}" class="btn btn-success btn-xs">
+                        <span class="sm:hidden">Today &gt;</span>
+                        <span class="hidden sm:inline">Go to Today</span>
+                    </a>
                 </div>
-                <a href="{% url 'calendar_day' next_year next_month next_day %}" class="btn btn-ghost btn-sm">Next &gt;</a>
+
+                <!-- Next Day Button -->
+                <a href="{% url 'calendar_day' next_day_same_month_year next_day_same_month_month next_day_same_month %}"
+                   class="btn btn-ghost btn-sm"
+                   title="Next day">
+                    Day &gt;
+                </a>
+
+                <!-- Next Month Button -->
+                <a href="{% url 'calendar_day' next_year next_month next_day %}"
+                   class="btn btn-ghost btn-sm"
+                   title="Next month">
+                    Month &gt;&gt;
+                </a>
             </div>
 
             <!-- Calendar Grid -->
