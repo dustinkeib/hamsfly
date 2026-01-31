@@ -1,5 +1,5 @@
 <!-- Date Header Row -->
-<div class="flex items-center justify-between mb-4">
+<div class="flex items-center justify-between mb-2">
     <!-- Date (3/4 width) -->
     <h3 class="font-bold text-lg flex-grow">{{ date|date:"F j, Y" }}</h3>
 
@@ -14,7 +14,7 @@
 
 <!-- Events Section -->
 {% if events %}
-    <div class="space-y-3 mb-4">
+    <div class="space-y-2 mb-2">
         {% for event in events %}
             <div class="card bg-base-200 shadow-sm">
                 <div class="card-body p-4">
@@ -29,14 +29,14 @@
 {% else %}
     <!-- "No events - Let's fly!" or simple message -->
     {% if weather and weather.rc_flying_assessment.rating == 'good' and not weather.historical %}
-        <div class="flex items-center justify-center gap-2 rounded-lg bg-success text-success-content px-3 py-1.5 mb-4 font-semibold">
+        <div class="flex items-center justify-center gap-2 rounded-lg bg-success text-success-content px-3 py-1.5 mb-2 font-semibold">
             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             No events - Let's fly!
         </div>
     {% else %}
-        <p class="text-base-content/60 mb-4">No events on this day</p>
+        <p class="text-base-content/60 mb-2">No events on this day</p>
     {% endif %}
 {% endif %}
 

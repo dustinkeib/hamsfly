@@ -12,7 +12,7 @@
             <!-- Flight Conditions Assessment (hide for historical) -->
             {% if not weather.historical %}
             {% with assessment=weather.rc_flying_assessment %}
-            <div class="mb-3 w-full rounded-lg px-3 py-1.5 text-center font-semibold
+            <div class="mb-2 w-full rounded-lg px-3 py-1.5 text-center font-semibold
                 {% if assessment.rating == 'good' %}bg-success text-success-content
                 {% elif assessment.rating == 'marginal' %}bg-warning text-warning-content
                 {% elif assessment.rating == 'poor' %}bg-error text-error-content
@@ -28,15 +28,30 @@
             {% endwith %}
             {% endif %}
 
-            <!-- Short Forecast (from NWS if available) -->
-            {% if weather.short_forecast %}
-            <div class="text-sm font-medium mb-3">{{ weather.short_forecast }}</div>
-            {% endif %}
+            <!-- Key Metrics Grid - 4 columns with stacked items -->
+            <div class="grid grid-cols-4 gap-3 text-sm text-center">
+                <!-- Column 1: Weather Condition Icon + Label -->
+                <div class="space-y-1">
+                    <div class="text-4xl" title="Weather condition">
+                        {% if weather.short_forecast %}
+                            {% if 'Thunder' in weather.short_forecast or 'T-Storm' in weather.short_forecast %}⛈️
+                            {% elif 'Rain' in weather.short_forecast or 'Shower' in weather.short_forecast or 'Drizzle' in weather.short_forecast %}🌧️
+                            {% elif 'Snow' in weather.short_forecast or 'Flurr' in weather.short_forecast %}❄️
+                            {% elif 'Fog' in weather.short_forecast or 'Haze' in weather.short_forecast %}🌫️
+                            {% elif 'Mostly Sunny' in weather.short_forecast or 'Mostly Clear' in weather.short_forecast %}🌤️
+                            {% elif 'Sunny' in weather.short_forecast or 'Clear' in weather.short_forecast %}☀️
+                            {% elif 'Partly' in weather.short_forecast %}⛅
+                            {% elif 'Cloudy' in weather.short_forecast %}☁️
+                            {% else %}🌡️{% endif %}
+                        {% else %}🌡️{% endif %}
+                    </div>
+                    <div>
+                        <div class="font-bold text-xs">{{ weather.short_forecast|default:"--" }}</div>
+                    </div>
+                </div>
 
-            <!-- Key Metrics Grid - 3 columns with stacked items -->
-            <div class="grid grid-cols-3 gap-4 text-sm text-center">
-                <!-- Column 1: Wind Arrow + Wind Details -->
-                <div class="space-y-2">
+                <!-- Column 2: Wind Arrow + Wind Details -->
+                <div class="space-y-1">
                     <div class="text-4xl font-bold" title="Wind direction">{{ weather.wind_arrow }}</div>
                     <div>
                         {% if weather.wind %}
@@ -53,7 +68,7 @@
                 </div>
 
                 <!-- Column 2: Temperature + Rain -->
-                <div class="space-y-2">
+                <div class="space-y-1">
                     <div>
                         {% if weather.temperature_high_f is not None %}
                         <div class="font-medium whitespace-nowrap">
@@ -76,7 +91,7 @@
                 </div>
 
                 <!-- Column 3: Ceiling + Visibility -->
-                <div class="space-y-2">
+                <div class="space-y-1">
                     <div>
                         {% if weather.ceiling is not None %}
                         <div class="font-medium">{{ weather.ceiling }} ft</div>
@@ -96,41 +111,43 @@
                 </div>
             </div>
 
-            <!-- Hourly Forecast Link (hide for historical) -->
-            {% if not weather.historical %}
-            <div class="text-center mt-3">
+            <!-- Footer Row: Hourly Forecast, Sources, and Fetched Info -->
+            <div class="flex items-center justify-between gap-4 flex-wrap mt-2 text-xs">
+                <!-- Hourly Forecast Link (hide for historical) - Left aligned -->
+                {% if not weather.historical %}
                 <a href="{% url 'hourly_forecast' date.year date.month date.day %}"
-                   class="link link-primary text-sm">Hourly Forecast &rarr;</a>
-            </div>
-            {% endif %}
+                   class="link font-bold text-base text-info hover:text-primary">Hourly Forecast &rarr;</a>
+                {% else %}
+                <div></div>
+                {% endif %}
 
-            <!-- Sources -->
-            <div class="flex items-center justify-center gap-2 flex-wrap mt-3 text-xs text-base-content/60">
-                <span>Sources:</span>
-                {% if weather.flight_rules %}
-                <span class="badge badge-{{ weather.flight_rules_color }} badge-xs">{{ weather.flight_rules }}</span>
-                {% endif %}
-                {% if weather.metar %}
-                <span class="badge badge-primary badge-xs badge-outline">METAR:{{ weather.station }}</span>
-                {% endif %}
-                {% if weather.taf %}
-                <span class="badge badge-secondary badge-xs badge-outline">TAF</span>
-                {% endif %}
-                {% if weather.nws %}
-                <span class="badge badge-accent badge-xs badge-outline">NWS</span>
-                {% endif %}
-                {% if weather.extended %}
-                <span class="badge badge-info badge-xs badge-outline">Extended</span>
-                {% endif %}
-                {% if weather.historical %}
-                <span class="badge badge-neutral badge-xs badge-outline">Historical</span>
-                {% endif %}
-            </div>
+                <!-- Sources - Center aligned -->
+                <div class="flex items-center gap-2 flex-wrap text-base-content/60">
+                    <span>Sources:</span>
+                    {% if weather.flight_rules %}
+                    <span class="badge badge-{{ weather.flight_rules_color }} badge-xs">{{ weather.flight_rules }}</span>
+                    {% endif %}
+                    {% if weather.metar %}
+                    <span class="badge badge-primary badge-xs badge-outline">METAR:{{ weather.station }}</span>
+                    {% endif %}
+                    {% if weather.taf %}
+                    <span class="badge badge-secondary badge-xs badge-outline">TAF</span>
+                    {% endif %}
+                    {% if weather.nws %}
+                    <span class="badge badge-accent badge-xs badge-outline">NWS</span>
+                    {% endif %}
+                    {% if weather.extended %}
+                    <span class="badge badge-info badge-xs badge-outline">Extended</span>
+                    {% endif %}
+                    {% if weather.historical %}
+                    <span class="badge badge-neutral badge-xs badge-outline">Historical</span>
+                    {% endif %}
+                </div>
 
-            <!-- Cache/Time Info -->
-            <div class="flex items-center justify-center gap-1 text-xs text-base-content/50 mt-2">
-                <span>Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}</span>
-                {% if refresh_seconds %}<span> · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span></span>{% endif %}
+                <!-- Cache/Time Info - Right aligned -->
+                <div class="flex items-center gap-1 text-base-content/50">
+                    <span>Fetched: {{ weather.cached_at|localtime|time:"H:i:s" }}</span>
+                    {% if refresh_seconds %}<span> · <span class="countdown-timer" data-seconds="{{ refresh_seconds }}"></span></span>{% endif %}
                 <button
                     class="btn btn-ghost btn-xs ml-1"
                     hx-get="{% url 'weather_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
