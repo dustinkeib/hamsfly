@@ -6,7 +6,7 @@
     <!-- Flying Button (1/4 width) - polls every 3s for updates -->
     <div id="flying-button-container"
          hx-get="{% url 'flying_refresh' %}?year={{ date.year }}&month={{ date.month }}&day={{ date.day }}"
-         hx-trigger="every 3s"
+         hx-trigger="every 30s"
          hx-swap="innerHTML transition:false">
         {% include "hamsalert/partials/flying_button.html" %}
     </div>
