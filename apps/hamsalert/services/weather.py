@@ -424,6 +424,7 @@ class ExtendedForecastData:
     temperature_high: Optional[int] = None  # Celsius
     temperature_low: Optional[int] = None
     precipitation_probability: Optional[int] = None
+    conditions: Optional[str] = None  # Weather conditions from Visual Crossing
     cached_at: datetime = field(default_factory=timezone.now)
     from_cache: bool = False
     source: WeatherSource = WeatherSource.EXTENDED
@@ -767,9 +768,11 @@ class CompositeWeatherData:
 
     @property
     def short_forecast(self) -> Optional[str]:
-        """Short forecast text from NWS."""
+        """Short forecast text from NWS or Extended forecast."""
         if self.nws:
             return self.nws.short_forecast
+        if self.extended:
+            return self.extended.conditions
         return None
 
     @property
@@ -1204,6 +1207,7 @@ class WeatherService:
             'temperature_high': data.temperature_high,
             'temperature_low': data.temperature_low,
             'precipitation_probability': data.precipitation_probability,
+            'conditions': data.conditions,
         }
 
     def _deserialize_extended_data(self, data: dict) -> ExtendedForecastData:
@@ -1221,6 +1225,7 @@ class WeatherService:
             temperature_high=data.get('temperature_high'),
             temperature_low=data.get('temperature_low'),
             precipitation_probability=data.get('precipitation_probability'),
+            conditions=data.get('conditions'),
             cached_at=timezone.now(),
             from_cache=True,
             source=WeatherSource.EXTENDED,
@@ -2414,6 +2419,7 @@ class WeatherService:
             wind_speed_kmh = day_data.get('windspeed') or 0
             wind_gust_kmh = day_data.get('windgust')
             wind_dir = day_data.get('winddir')
+            conditions = day_data.get('conditions')
 
             # Convert km/h to knots
             wind_speed_kt = round(wind_speed_kmh * 0.54)
@@ -2433,6 +2439,7 @@ class WeatherService:
                 temperature_high=round(temp_max) if temp_max is not None else None,
                 temperature_low=round(temp_min) if temp_min is not None else None,
                 precipitation_probability=round(precip_prob) if precip_prob is not None else None,
+                conditions=conditions,
                 cached_at=timezone.now(),
                 source=WeatherSource.EXTENDED,
             )
