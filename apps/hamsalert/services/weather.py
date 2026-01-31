@@ -2727,6 +2727,7 @@ class WeatherService:
                 wind_speed_kmh = day_data.get('windspeed') or 0  # km/h in metric
                 wind_gust_kmh = day_data.get('windgust')
                 wind_dir = day_data.get('winddir')
+                conditions = day_data.get('conditions')
 
                 # Convert km/h to knots (1 km/h = 0.54 knots)
                 wind_speed_kt = round(wind_speed_kmh * 0.54)
@@ -2746,6 +2747,7 @@ class WeatherService:
                     temperature_high=round(temp_max) if temp_max is not None else None,
                     temperature_low=round(temp_min) if temp_min is not None else None,
                     precipitation_probability=round(precip_prob) if precip_prob is not None else None,
+                    conditions=conditions,
                     cached_at=timezone.now(),
                     source=WeatherSource.EXTENDED,  # Keep same source for DB compatibility
                 )
