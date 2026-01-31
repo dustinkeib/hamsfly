@@ -29,7 +29,7 @@
             {% endif %}
 
             <!-- Key Metrics Grid - 4 columns with stacked items -->
-            <div class="grid grid-cols-4 gap-3 text-sm text-center">
+            <div class="grid grid-cols-4 gap-3 text-sm text-center pt-2">
                 <!-- Column 1: Weather Condition Icon + Label -->
                 <div class="space-y-1">
                     <div class="text-4xl" title="Weather condition">
@@ -40,7 +40,8 @@
                             {% elif 'Fog' in weather.short_forecast or 'Haze' in weather.short_forecast %}🌫️
                             {% elif 'Mostly Sunny' in weather.short_forecast or 'Mostly Clear' in weather.short_forecast %}🌤️
                             {% elif 'Sunny' in weather.short_forecast or 'Clear' in weather.short_forecast %}☀️
-                            {% elif 'Partly' in weather.short_forecast %}⛅
+                            {% elif 'Partly' in weather.short_forecast or 'Partially' in weather.short_forecast %}⛅
+                            {% elif 'Overcast' in weather.short_forecast %}☁️
                             {% elif 'Cloudy' in weather.short_forecast %}☁️
                             {% else %}🌡️{% endif %}
                         {% else %}🌡️{% endif %}
