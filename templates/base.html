@@ -46,9 +46,12 @@
             <a href="https://docs.google.com/document/d/1xUz2RZRha6XDjhXVXIPfAZQr4f0s_B_-m2Rgr093D_Y/edit?usp=drivesdk" target="_blank" class="btn btn-ghost btn-sm text-sm">Bugs/Feedback</a>
         </div>
     </div>
-    <main class="container mx-auto p-3">
+    <main class="container mx-auto p-3 max-w-6xl">
         {% block content %}{% endblock %}
     </main>
+    <footer class="text-center text-xs text-base-content/60 py-3">
+        © {% now "Y" %} Dustin Keib / Humboldt Aero Modelers (HAMS). All rights reserved.
+    </footer>
     {% block scripts %}{% endblock %}
     <script>
         // Configure HTMX to include Django CSRF token
